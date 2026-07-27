@@ -1,4 +1,18 @@
-# Hardware Bring-up Checklists (Part B)
+# Hardware Bring-up Checklists
+
+## Phase 1 blocker — Pi needs a microSD card first
+
+The Pi 3B boots from microSD and none is on hand yet. Buy a microSD card
+(16–32 GB, class 10/A1, ~US$5–8), then:
+
+1. Flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager on the
+   Mac; in the Imager gear/settings enable SSH, set a username/password,
+   and enter the WiFi credentials.
+2. Boot the Pi, confirm `ssh <user>@raspberrypi.local` works from the Mac.
+3. Run `scripts/pi-setup.sh` on the Pi, then `scripts/deploy.sh` from the
+   Mac — the software side is already written and waiting.
+
+# Part B checklists
 
 Work these in order when the hardware arrives. Each phase ends with a
 verifiable pass condition — do not move on until it passes.

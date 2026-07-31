@@ -124,6 +124,7 @@ int main(int argc, char *argv[])
    }
    else if (slaves == 0)
    {
+      fflush(stdout); /* keep the message after ecat_open's output */
       fprintf(stderr, "Command '%s' needs at least one slave on the bus.\n",
               cmd);
       rc = EXIT_FAILURE;

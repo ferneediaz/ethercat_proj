@@ -1,5 +1,6 @@
 #include "ecat.h"
 
+#include <net/if.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -10,6 +11,18 @@ static int expected_wkc;
 
 int ecat_open(const char *ifname)
 {
+   /* SOEM's ec_init can succeed on a name that isn't a real interface,
+    * which then looks identical to "no hardware attached". Check first
+    * so a typo reports as a typo. */
+   if (if_nametoindex(ifname) == 0)
+   {
+      fprintf(stderr,
+              "No network interface named '%s' on this machine.\n"
+              "List the available ones with: ip -brief link\n"
+              "(The EtherCAT segment is normally eth0.)\n",
+              ifname);
+      return -1;
+   }
    if (!ec_init(ifname))
    {
       fprintf(stderr,

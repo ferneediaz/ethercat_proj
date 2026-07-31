@@ -9,7 +9,15 @@ defaults are `PI_USER=pi`, `PI_HOST=raspberrypi.local`.
 - Hostname: `raspberrypi`
 - Username: `pi`
 - Password: _(your choice — you'll type it on first SSH)_
-- SSH: **enabled**, password authentication
+- SSH: **enabled**, **public-key authentication only**
+  - Key: `~/.ssh/id_ed25519.pub` (`SHA256:pXsLnbJ+...`, dan@everblissgreen.com)
+  - The private key is passphrase-protected, so load it into the macOS
+    keychain once on the Mac — otherwise every SSH prompts for the
+    passphrase and automated deploys stall:
+    `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`
+  - The account password set in Imager is separate; it's for console
+    login. Raspberry Pi OS grants the first user passwordless `sudo`,
+    which is what lets `pi-setup.sh` run unattended.
 - WiFi: your 2.4 GHz network SSID + password (the Pi 3B does support
   5 GHz, but 2.4 GHz is more reliable for headless setup)
 - WiFi country: set it, or the WiFi radio stays disabled

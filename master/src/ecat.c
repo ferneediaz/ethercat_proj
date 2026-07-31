@@ -53,25 +53,28 @@ bool ecat_print_slaves(void)
    {
       return false;
    }
-   bool vendor_ok = (uint32_t)ec_slave[1].eep_man == SERVO_VENDOR_ID;
-   bool product_ok = (uint32_t)ec_slave[1].eep_id == SERVO_PRODUCT_CODE;
-   if (!vendor_ok)
+   uint32_t man = (uint32_t)ec_slave[1].eep_man;
+   uint32_t id = (uint32_t)ec_slave[1].eep_id;
+
+   /* Identity comes from the ESC's EEPROM, not the silicon, so a
+    * mismatch means "EEPROM holds a different ESI", not "wrong chip". */
+   if (man == SERVO_VENDOR_ID && id == SERVO_PRODUCT_CODE)
    {
-      printf("WARNING: slave 1 vendor is not ASIX (0x%8.8x). Wrong device?\n",
-             SERVO_VENDOR_ID);
+      printf("Identity matches the ASIX ESI. PASS\n");
+      return true;
    }
-   else if (!product_ok)
+   if (man == SSC_DEFAULT_VENDOR_ID && id == SSC_DEFAULT_PRODUCT_CODE)
    {
-      printf("Vendor is ASIX but product code differs from the ESI "
-             "(expected 0x%8.8x). EEPROM likely not written yet — see "
-             "docs/bringup-checklist.md Phase 3.\n",
-             SERVO_PRODUCT_CODE);
+      printf("Identity is the stock Beckhoff SSC demo EEPROM the module "
+             "ships with (vendor 0x%8.8x). The ESC is alive and readable; "
+             "this is expected until the EEPROM is rewritten.\n",
+             SSC_DEFAULT_VENDOR_ID);
+      return true;
    }
-   else
-   {
-      printf("Slave 1 matches the expected ASIX identity. PASS\n");
-   }
-   return vendor_ok && product_ok;
+   printf("Unrecognised identity (vendor 0x%8.8x product 0x%8.8x). The ESC "
+          "responds, but its EEPROM holds an ESI we don't know about.\n",
+          man, id);
+   return false;
 }
 
 bool ecat_to_op(void)

@@ -65,7 +65,54 @@ verifiable pass condition — do not move on until it passes.
 Reference documents live in `knowledge base/` (ASIX datasheet, ESI design
 note, reference schematic) and the original build plan docx.
 
-## Phase 3 — AX58100 bring-up (needs: AX58100 board, Cat5e cable, 5V USB supply)
+## Phase 3 — RESULTS (completed 2026-07-31)
+
+Powering the module from the Pi's GPIO 5V worked. The Pi stayed healthy
+(`throttled=0x0`, ~40°C), `eth0` came up at 100 Mbps full duplex, and the
+master enumerated the slave.
+
+What the module actually reports:
+
+| Field | Value |
+| --- | --- |
+| Name | `SSC-Device` |
+| Vendor | `0x00000009` (**Beckhoff**, not ASIX) |
+| Product | `0x26483052` |
+| Revision | `0x00020111` |
+| Process data | 2 bytes out, 6 bytes in |
+| Mailbox | CoE, 128 bytes each way |
+| Distributed clocks | supported |
+| Active ports | port 0 only (OUT correctly empty) |
+
+**The EEPROM ships with Beckhoff's stock Slave Stack Code demo ESI**, not
+the ASIX one. That is not a fault — it means the EEPROM is programmed and
+readable. It does mean the ASIX ESI in `knowledge base/` describes a
+different configuration than what is on the module today.
+
+### Correction to the original plan's Milestone 1
+
+The build plan expected the bare ESC to reach **OP** with no STM32
+attached. **That is not achievable with this module.** Observed:
+
+```
+Slave 1 state=0x01 (INIT)  AL status=0x0000 (No error)
+```
+
+Stuck in INIT with a *zero* AL status code is the signature of an ESC
+whose host application never answers. Leaving INIT requires something to
+service the process data interface over SPI and acknowledge the AL state
+machine — that is the STM32 running a slave stack. A genuine
+misconfiguration would instead report a non-zero AL status.
+
+So the realistic milestone without the STM32 is: **link up, slave
+enumerated, EEPROM readable, mailbox and DC configured.** All achieved.
+Reaching SAFE_OP/OP now depends on Phase 4, not on rewriting the EEPROM.
+
+Practical consequence: **do not bother flashing the ASIX ESI yet.** The
+EEPROM contents must match whatever object dictionary the SOES firmware
+implements, so write it once in Phase 4 when that is decided — not now.
+
+## Phase 3 (original checklist — needs: AX58100 board, Cat5e cable, 5V USB supply)
 
 - [ ] Power the AX58100 board from its own 5V/USB supply; power LED lights.
 - [ ] Cat5e from the Pi's `eth0` to the AX58100 **IN / Port 0** jack (not OUT).

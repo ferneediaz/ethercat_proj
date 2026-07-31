@@ -30,8 +30,15 @@ typedef struct
 
 #pragma pack(pop)
 
-/* Identity expected on the bus (from the ASIX ESI file) */
+/* Identity from the ASIX ESI file — what the EEPROM would report if we
+ * flash the ASIX ESI onto the module. */
 #define SERVO_VENDOR_ID 0x00000B95u  /* ASIX */
 #define SERVO_PRODUCT_CODE 0x00620300u
+
+/* What the module actually reports as shipped: the stock Beckhoff
+ * Slave Stack Code demo EEPROM. Observed 2026-07-31 with
+ * rev 0x00020111, 2 bytes out / 6 bytes in, CoE mailbox, DC capable. */
+#define SSC_DEFAULT_VENDOR_ID 0x00000009u /* Beckhoff */
+#define SSC_DEFAULT_PRODUCT_CODE 0x26483052u
 
 #endif /* PDO_LAYOUT_H */

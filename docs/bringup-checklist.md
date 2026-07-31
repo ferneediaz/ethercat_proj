@@ -12,6 +12,52 @@ The Pi 3B boots from microSD and none is on hand yet. Buy a microSD card
 3. Run `scripts/pi-setup.sh` on the Pi, then `scripts/deploy.sh` from the
    Mac — the software side is already written and waiting.
 
+# The actual AX58100 module (differs from the ASIX kit docs)
+
+The board on hand is **not** the ASIX EVB the kit PDFs describe. The EVB
+has a micro-USB 5V jack and an onboard 5V→3.3V/1.2V regulator; this one
+is a bare module with **two RJ45 jacks and a single 10-pin header**, and
+no independent power connector. It takes power through the header.
+
+Header, top to bottom as printed on the board:
+
+| # | Pin | Purpose |
+| --- | --- | --- |
+| 1 | `5V` | Power in — module regulates down to 3.3V/1.2V |
+| 2 | `GND` | Ground |
+| 3 | `SYNC0` | Distributed-clock sync output → STM32 EXTI |
+| 4 | `SYNC1` | Second sync output → STM32 EXTI |
+| 5 | `SCK` | SPI clock |
+| 6 | `MISO` | SPI data, module → STM32 |
+| 7 | `MOSI` | SPI data, STM32 → module |
+| 8 | `IRQ` | Interrupt (the `SINT` signal in ASIX docs) → STM32 EXTI |
+| 9 | `NSS` | SPI chip select (the `SCS_ESC` signal) |
+| 10 | `LOAD` | EEPROM-loaded status (ASIX `EEP_DONE`) — verify in Phase 4 |
+
+**Note on the 4.7K pull-up:** the kit docs insist on pulling `SCS_FUNC`
+to 3.3V to select PDI-SPI mode. This module does not expose `SCS_FUNC`
+at all, which strongly suggests the pull-up is already fitted on-board.
+Confirm with a multimeter before adding one — do not assume either way.
+
+## Phase 3a — power the module from the Pi (no STM32 needed)
+
+Ethernet carries no power here (there is no PoE), so the module must be
+powered separately before the link can ever come up.
+
+- [ ] **Shut down and unplug the Pi first**: `sudo poweroff`, then pull
+      the power. Never wire into a live GPIO header.
+- [ ] Module `5V` → Pi GPIO **pin 4** (5V)
+- [ ] Module `GND` → Pi GPIO **pin 6** (GND) — adjacent to pin 4
+- [ ] Leave every other header pin unconnected; they are the SPI
+      interface for the STM32 in Phase 4.
+- [ ] Cat5e from Pi `eth0` → module **IN / Port 0** jack.
+- [ ] Power the Pi back up. Expect LEDs on the module and, within a few
+      seconds, `Link is Up` on `eth0`.
+
+Pi GPIO orientation: pin 1 is the corner nearest the microSD slot;
+odd-numbered pins form the row closest to the board edge. Pins 4 and 6
+are the second and third pins along the *even* row.
+
 # Part B checklists
 
 Work these in order when the hardware arrives. Each phase ends with a

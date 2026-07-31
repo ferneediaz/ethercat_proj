@@ -192,11 +192,31 @@ regulator and destroys it. Avoid pin 40 (VBUS) too; it back-feeds USB.
 There is no fuse on the Pi's GPIO 5V pins, so a breadboard short goes
 straight back to the supply.
 
-**Powering is not programming.** With no USB cable, firmware must be
-loaded over SWD using the Pi as an OpenOCD debug probe. Check for a
-micro-USB *data* cable first — the Pi 3B uses the same connector, so a
-spare Android-era cable removes this whole problem and also provides
-the serial console.
+### Flashing: powering is not programming
+
+**A micro-USB data cable is effectively required.** Confirmed from the
+Pico 2 W datasheet and Raspberry Pi docs:
+
+- The Pico 2 W's USB port is **micro-USB** — the same connector as the
+  Pi 3B's power input, so a spare Android-era cable works. It must be a
+  *data* cable, not charge-only.
+- SWD is exposed as **three unpopulated through-holes labelled DEBUG**.
+  Only the "H" variants (Pico H / WH) ship with the solderless 3-pin
+  JST-SH socket. On a plain Pico 2 W, SWD therefore **requires
+  soldering** pins or wires to those holes. Viable with an iron; not a
+  no-purchase escape route otherwise.
+
+**Plug the Pico into the Raspberry Pi's USB port, not the Mac.** All four
+Pi USB ports are free, and this keeps the whole loop SSH-drivable:
+
+- Flash: hold BOOTSEL while plugging in → mounts as a mass-storage drive
+  on the Pi → copy the `.uf2` across.
+- Serial: appears as `/dev/ttyACM0` on the Pi for debug output.
+- Power: comes over the same cable, so the VSYS jumper can be removed
+  (do not feed VSYS from the Pi *and* USB at once).
+
+The Mac is not needed in the loop at all — firmware builds on the Pi with
+`gcc-arm-none-eabi` (confirmed available) plus a pico-sdk 2.x checkout.
 
 ### Wiring — module 10-pin header → Pico
 

@@ -156,11 +156,53 @@ No off-the-shelf SOES port exists for RP2040 — but none existed for the
 STM32F303 either. The work is the same: implement the ESC access layer
 (SPI register read/write) against the AX58100 datasheet.
 
+### Board on hand: Raspberry Pi Pico 2 W (RP2350)
+
+Not the original Pico — this matters in a few places:
+
+- **pico-sdk 2.x is required** (1.x does not know RP2350). Core is
+  Cortex-M33; the Pi's `gcc-arm-none-eabi` 14.2 supports it.
+- **The onboard LED hangs off the CYW43 WiFi chip, not a GPIO.** The
+  usual "blink an LED" smoke test needs the WiFi driver initialised, so
+  use **serial output** as the first sign of life instead.
+- **Leave WiFi uninitialised.** It is unused here, and keeping the CYW43
+  stack out of the build preserves the deterministic bare-metal timing
+  that motivated choosing this part over an ESP32.
+- Power pinout is unchanged from Pico 1: VSYS 39, GND 38, 3V3(OUT) 36,
+  VBUS 40. VSYS accepts 1.8–5.5V.
+
+### Powering the Pico from the Pi (no USB cable needed)
+
+| Pi | → | Pico |
+| --- | --- | --- |
+| 5V (pin 2) | → | **VSYS (pin 39)** |
+| GND (pin 6) | → | **GND (pin 38)** |
+
+Pi pins 2 and 4 are the *same* 5V rail, not independent supplies — the
+AX58100 module on pin 4 and the Pico on pin 2 share one budget. Combined
+draw is roughly 200–250 mA, well within headroom (`throttled=0x0`
+measured with the module attached).
+
+Cleanest layout: run one 5V and one GND jumper from the Pi to the
+breadboard power rails, then feed both the module and the Pico from
+those rails. Fewer wires into the Pi, and common ground is guaranteed.
+
+**Never** feed 5V into Pico pin 36 (3V3 OUT) — that back-drives the
+regulator and destroys it. Avoid pin 40 (VBUS) too; it back-feeds USB.
+There is no fuse on the Pi's GPIO 5V pins, so a breadboard short goes
+straight back to the supply.
+
+**Powering is not programming.** With no USB cable, firmware must be
+loaded over SWD using the Pi as an OpenOCD debug probe. Check for a
+micro-USB *data* cable first — the Pi 3B uses the same connector, so a
+spare Android-era cable removes this whole problem and also provides
+the serial console.
+
 ### Wiring — module 10-pin header → Pico
 
 | Module pin | Pico | Notes |
 | --- | --- | --- |
-| `5V` | VBUS (pin 40) or shared 5V | already fed from the Pi today |
+| `5V` | breadboard 5V rail | shared with the Pi's 5V |
 | `GND` | any GND | **common ground required** |
 | `SCK` | SPI0 SCK (GP18, pin 24) | |
 | `MOSI` | SPI0 TX (GP19, pin 25) | MCU → module |

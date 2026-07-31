@@ -77,6 +77,77 @@ bool ecat_print_slaves(void)
    return false;
 }
 
+static const char *pdi_name(uint8_t pdi)
+{
+   /* AX58100 datasheet, EEPROM PDI Control (0x00) / register 0x0140 */
+   switch (pdi)
+   {
+      case 0x00: return "interface deactivated (no PDI)";
+      case 0x04: return "Digital I/O";
+      case 0x05: return "SPI Slave";
+      case 0x08: return "16-bit Asynchronous Local Bus";
+      case 0x09: return "8-bit Asynchronous Local Bus";
+      default: return "reserved/unknown";
+   }
+}
+
+void ecat_dump_regs(void)
+{
+   uint16 adr = ec_slave[1].configadr;
+   uint8_t type = 0, rev = 0, pdi = 0, esc_cfg = 0, pdi_cfg = 0;
+   uint16_t build = 0, al_ctrl = 0, al_stat = 0;
+
+   ec_FPRD(adr, 0x0000, sizeof(type), &type, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0001, sizeof(rev), &rev, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0002, sizeof(build), &build, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0140, sizeof(pdi), &pdi, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0141, sizeof(esc_cfg), &esc_cfg, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0150, sizeof(pdi_cfg), &pdi_cfg, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0130, sizeof(al_ctrl), &al_ctrl, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0134, sizeof(al_stat), &al_stat, EC_TIMEOUTRET);
+
+   printf("ESC registers (slave 1 @ 0x%4.4x)\n", adr);
+   printf("  0x0000 Type              0x%2.2x\n", type);
+   printf("  0x0001 Revision          0x%2.2x\n", rev);
+   printf("  0x0002 Build             0x%4.4x\n", build);
+   printf("  0x0140 PDI Control       0x%2.2x  -> %s\n", pdi, pdi_name(pdi));
+   printf("  0x0141 ESC Config        0x%2.2x  -> device emulation %s\n",
+          esc_cfg, (esc_cfg & 0x01) ? "ON (ESC drives AL status itself)"
+                                    : "OFF (host MCU must drive AL status)");
+   if (pdi == 0x05)
+   {
+      printf("  0x0150 PDI Config       0x%2.2x  -> SPI mode %d, "
+             "SPI_SEL active %s\n",
+             pdi_cfg, pdi_cfg & 0x03,
+             (pdi_cfg & 0x10) ? "high" : "low");
+   }
+   else
+   {
+      printf("  0x0150 PDI Config       0x%2.2x\n", pdi_cfg);
+   }
+   printf("  0x0130 AL Control        0x%4.4x\n", al_ctrl);
+   printf("  0x0134 AL Status         0x%4.4x\n", al_stat);
+
+   printf("\n");
+   if (pdi == 0x05)
+   {
+      printf("PDI is SPI Slave: the module expects a host MCU as SPI\n"
+             "master on SCK/MISO/MOSI/NSS. SCS_FUNC must be pulled up\n"
+             "on-board for this to be active, and this register reading\n"
+             "0x05 is that confirmation.\n");
+   }
+   else if (pdi == 0x00)
+   {
+      printf("PDI is DEACTIVATED. An MCU on SPI will NOT work until the\n"
+             "EEPROM is rewritten with PDI Control = 0x05.\n");
+   }
+   else
+   {
+      printf("PDI is not SPI. An SPI host MCU needs EEPROM PDI Control\n"
+             "set to 0x05 (see docs/bringup-checklist.md).\n");
+   }
+}
+
 bool ecat_to_op(void)
 {
    ec_config_map(&IOmap);

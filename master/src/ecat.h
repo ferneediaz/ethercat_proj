@@ -18,6 +18,11 @@ int ecat_open(const char *ifname);
  * expected ASIX identity. Returns true when slave 1 matches. */
 bool ecat_print_slaves(void);
 
+/* Read and decode the ESC configuration registers of slave 1 —
+ * chip identity, PDI type, SPI mode, device emulation, AL state.
+ * Works in INIT, so it needs no host MCU attached. */
+void ecat_dump_regs(void);
+
 /* Map process data and bring all slaves to OPERATIONAL.
  * Returns true on success; prints diagnostics on failure. */
 bool ecat_to_op(void);

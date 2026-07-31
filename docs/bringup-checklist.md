@@ -112,65 +112,93 @@ Practical consequence: **do not bother flashing the ASIX ESI yet.** The
 EEPROM contents must match whatever object dictionary the SOES firmware
 implements, so write it once in Phase 4 when that is decided — not now.
 
-## Phase 3 (original checklist — needs: AX58100 board, Cat5e cable, 5V USB supply)
+## Confirmed ESC configuration (read live, `servo_master eth0 regs`)
 
-- [ ] Power the AX58100 board from its own 5V/USB supply; power LED lights.
-- [ ] Cat5e from the Pi's `eth0` to the AX58100 **IN / Port 0** jack (not OUT).
-- [ ] `sudo ~/ethercat/master/build/servo_master eth0 scan`
-      → a slave appears with vendor `0x0B95`. A blank EEPROM may show an
-      unnamed slave — chip-alive is the pass here.
-- [ ] Write the ESI/EEPROM (one-time):
-      - Preferred (Linux-only): SOEM `eepromtool` built at
-        `~/ethercat/SOEM/build/test/linux/eepromtool/eepromtool`.
-        The ESI XML is in the repo under `knowledge base/.../ESI_File/`.
-        Note: eepromtool writes a binary EEPROM image; if only the XML is
-        available, generate/obtain the `.bin` (ESI Design Note explains the
-        EEPROM layout; ConfigData `050403440a00000000001a00003c`).
-      - Fallback: TwinCAT on a Windows PC → drop the ESI XML into
-        `TwinCAT\3.1\Config\Io\EtherCAT`, scan, EEPROM Update (this is the
-        route the ASIX user guide documents).
-- [ ] Power-cycle the board, rescan → name and product code `0x00620300`
-      appear; `scan` prints PASS.
-- [ ] `sudo servo_master eth0 op` → slave reaches OP.
-      **MILESTONE 1** — master/slave EtherCAT link proven.
+Read over EtherCAT with no host MCU attached, so these are facts about
+the module as it sits — not assumptions from the ASIX kit docs:
 
-## Phase 4 — STM32 + SOES firmware (needs: Nucleo-F303RE, breadboard, jumpers, 4.7K resistor)
+| Register | Value | Meaning |
+| --- | --- | --- |
+| `0x0000` Type | `0xc8` | AX58100-class ESC |
+| `0x0140` PDI Control | **`0x05`** | **SPI Slave** — an SPI host MCU will work |
+| `0x0141` ESC Config | `0x0e` | device emulation **OFF** |
+| `0x0150` PDI Config | `0x03` | **SPI mode 3**, chip select **active low** |
+| `0x0130` AL Control | `0x0001` | INIT requested |
 
-Wiring (from the AX58100 reference schematic + build plan Stage 3):
+Three things this settles without buying any hardware:
 
-- [ ] AX58100 SCLK → STM32 SPI1_SCK
-- [ ] AX58100 MOSI → STM32 SPI1_MOSI
-- [ ] AX58100 MISO → STM32 SPI1_MISO
-- [ ] AX58100 SCS_ESC → STM32 SPI1_NSS (chip select)
-- [ ] AX58100 SINT → STM32 GPIO (EXTI)
-- [ ] AX58100 SYNC0 → STM32 GPIO (EXTI)
-- [ ] AX58100 reset pin → STM32 GPIO output
-- [ ] AX58100 GND ↔ STM32 GND (common ground — required)
-- [ ] **4.7K pull-up from SCS_FUNC to 3.3V.** Verify ~3.3V with a
-      multimeter before any firmware debugging. Missing this is the #1
-      cause of dead SPI.
+1. **The SCS_FUNC pull-up is already fitted on-board.** PDI Control could
+   not read `0x05` otherwise. Do not buy a 4.7K resistor and do not try
+   to add one — the module does not even expose the pin.
+2. **SPI mode 3 with active-low chip select** is confirmed from the
+   silicon, matching the ASIX ESI ConfigData `05 04 03 ...`.
+3. **Device emulation is off**, which is precisely why the slave sits in
+   INIT. The host MCU must drive AL status. Not a fault.
 
-Firmware (in `firmware/`, STM32CubeIDE project):
+## Phase 4 — host MCU + SOES firmware
 
-- [ ] CubeMX: target F303RE; SPI1 **Mode 3 (CPOL=1, CPHA=1), MSB-first**;
-      TIM2 PWM channel at 50 Hz; the two EXTI inputs; reset GPIO output.
-- [ ] Smallest step first: read one known AX58100 ID register over SPI and
-      print it on the ST-LINK VCP. Do not add SOES on top of unproven SPI.
-- [ ] Integrate SOES (Simple Open EtherCAT Slave); implement its HAL as
-      SPI register reads/writes per the AX58100 datasheet.
-- [ ] Object dictionary / PDO mapping must match
-      `master/src/pdo_layout.h` exactly (uint16 target_angle out,
-      uint16 echo_angle in). Echo the received angle back as echo_angle.
-- [ ] `sudo servo_master eth0 set 90` → 90 visible on the STM32 serial
-      output and echoed back (`echo=90` in the master's status line).
-      **MILESTONE 2** — data flows Pi → ESC → SPI → STM32 → back.
+**Decision (2026-07-31): the host MCU is a microcontroller on SPI —
+Raspberry Pi Pico recommended over ESP32.** The STM32 Nucleo-F303RE from
+the original plan is dropped.
+
+Rationale: EtherCAT cycles are driven by the SYNC0 interrupt and the
+AX58100 delivers ~150 ns sync jitter; a bare-metal RP2040 preserves that,
+whereas ESP32's FreeRTOS scheduling and WiFi stack introduce jitter for
+no benefit here (the wireless is unused). The Pico is also 3.3V logic —
+a direct match for the AX58100's I/O with no level shifting — and
+pico-sdk is CMake + C, the same toolchain this repo already uses.
+
+**Common misconception:** "RP2040 doesn't support SPI slave mode" is true
+but irrelevant. The **AX58100 is the SPI slave** (it has an NSS input);
+the MCU is the SPI **master**, which the RP2040 fully supports.
+
+No off-the-shelf SOES port exists for RP2040 — but none existed for the
+STM32F303 either. The work is the same: implement the ESC access layer
+(SPI register read/write) against the AX58100 datasheet.
+
+### Wiring — module 10-pin header → Pico
+
+| Module pin | Pico | Notes |
+| --- | --- | --- |
+| `5V` | VBUS (pin 40) or shared 5V | already fed from the Pi today |
+| `GND` | any GND | **common ground required** |
+| `SCK` | SPI0 SCK (GP18, pin 24) | |
+| `MOSI` | SPI0 TX (GP19, pin 25) | MCU → module |
+| `MISO` | SPI0 RX (GP16, pin 21) | module → MCU |
+| `NSS` | GP17 (pin 22) | chip select, **active low** |
+| `IRQ` | any GPIO, edge interrupt | ASIX `SINT` |
+| `SYNC0` | any GPIO, edge interrupt | distributed-clock tick |
+| `SYNC1` | optional | leave unconnected initially |
+| `LOAD` | optional input | ASIX `EEP_DONE`; verify meaning |
+
+Drive NSS as a plain GPIO rather than hardware CS — the ESC needs chip
+select held low across a whole multi-byte transaction.
+
+### Firmware steps
+
+- [ ] pico-sdk project in `firmware/`, CMake, C.
+- [ ] Configure SPI0 as **master, mode 3 (CPOL=1, CPHA=1), MSB-first**.
+      Start slow (~1 MHz) and raise once it works; the AX58100 tolerates
+      far more, but slow first makes scope debugging easy.
+- [ ] **Smallest step first:** read ESC register `0x0000` over SPI and
+      print it on USB serial. It must read **`0xc8`** — the same value
+      the master already reads over EtherCAT, so you have a known-good
+      expected answer. Do not add SOES until this works.
+- [ ] Integrate SOES; implement its HAL on top of the proven SPI reads.
+- [ ] Object dictionary / PDO mapping must match `master/src/pdo_layout.h`
+      (uint16 `target_angle` out, uint16 `echo_angle` in). Note the stock
+      EEPROM is currently 2 bytes out / **6** bytes in — reconcile by
+      rewriting the EEPROM once the dictionary is settled.
+- [ ] `sudo servo_master eth0 set 90` → 90 appears on the Pico's serial
+      output and echoes back (`echo=90` in the master's status line).
+      **MILESTONE 2** — data flows Pi → ESC → SPI → Pico → back.
 
 ## Phase 5 — Servo motion (needs: SG90, separate 5V supply)
 
-- [ ] SG90 orange (signal) → STM32 TIM2 PWM pin.
-- [ ] SG90 red (5V) → its **own** 5V supply, never the Nucleo's 5V pin
+- [ ] SG90 orange (signal) → a Pico PWM-capable GPIO.
+- [ ] SG90 red (5V) → its **own** 5V supply, never the Pico's 3V3 pin
       (a stalled SG90 draws 500–700 mA and browns out the board).
-- [ ] SG90 brown (GND) → common ground with STM32 and servo supply.
+- [ ] SG90 brown (GND) → common ground with Pico and servo supply.
 - [ ] Firmware maps angle → pulse width: `0.5 + angle/180 * 2.0` ms at
       50 Hz (this exact formula is unit-tested in `master/test/test_angle.c`).
 - [ ] `sudo servo_master eth0 set 0` / `90` / `180` → servo hits each end.

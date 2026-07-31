@@ -129,6 +129,12 @@ int main(int argc, char *argv[])
               cmd);
       rc = EXIT_FAILURE;
    }
+   else if (strcmp(cmd, "regs") == 0)
+   {
+      ecat_print_slaves();
+      printf("\n");
+      ecat_dump_regs();
+   }
    else if (strcmp(cmd, "op") == 0)
    {
       ecat_print_slaves();

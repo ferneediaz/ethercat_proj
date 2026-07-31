@@ -137,130 +137,133 @@ Three things this settles without buying any hardware:
 
 ## Phase 4 — host MCU + SOES firmware
 
-**Decision (2026-07-31): the host MCU is a microcontroller on SPI —
-Raspberry Pi Pico recommended over ESP32.** The STM32 Nucleo-F303RE from
-the original plan is dropped.
+**Decision (2026-07-31, revised): the host MCU is a LilyGO T-Display-S3
+(ESP32-S3).** Both the STM32 Nucleo-F303RE (original plan) and the
+Raspberry Pi Pico 2 W are dropped.
 
-Rationale: EtherCAT cycles are driven by the SYNC0 interrupt and the
-AX58100 delivers ~150 ns sync jitter; a bare-metal RP2040 preserves that,
-whereas ESP32's FreeRTOS scheduling and WiFi stack introduce jitter for
-no benefit here (the wireless is unused). The Pico is also 3.3V logic —
-a direct match for the AX58100's I/O with no level shifting — and
-pico-sdk is CMake + C, the same toolchain this repo already uses.
+Reason: the T-Display-S3 is **in hand with a USB-C cable that fits**,
+while the Pico 2 W cannot be flashed without a micro-USB data cable that
+isn't available (its SWD pads are unpopulated through-holes needing
+solder). Hardware you can program today beats better hardware you can't.
 
-**Common misconception:** "RP2040 doesn't support SPI slave mode" is true
-but irrelevant. The **AX58100 is the SPI slave** (it has an NSS input);
-the MCU is the SPI **master**, which the RP2040 fully supports.
+**Honest correction to the earlier rationale.** The Pico was argued for
+on determinism grounds — FreeRTOS and WiFi jitter versus bare metal.
+That argument was overstated *for this project*. The master runs a 10 ms
+cycle driving a 50 Hz hobby servo; tens of microseconds of scheduling
+jitter are irrelevant at that timescale. Determinism would matter for
+high-performance multi-axis motion control, not here. The ESP32-S3 is a
+sound choice, with mitigations below.
 
-No off-the-shelf SOES port exists for RP2040 — but none existed for the
-STM32F303 either. The work is the same: implement the ESC access layer
-(SPI register read/write) against the AX58100 datasheet.
+Mitigations (do these, they are cheap):
 
-### Board on hand: Raspberry Pi Pico 2 W (RP2350)
+- Pin the EtherCAT task to **core 1** and leave core 0 for system work.
+- **Do not initialise WiFi or Bluetooth.** Unused radios are the main
+  jitter source on ESP32.
+- Give the EtherCAT task high priority; avoid blocking calls in it.
 
-Not the original Pico — this matters in a few places:
+**Common misconception:** "the MCU can't do SPI slave mode" is irrelevant
+either way. The **AX58100 is the SPI slave** (it has an NSS input); the
+MCU is the SPI **master**.
 
-- **pico-sdk 2.x is required** (1.x does not know RP2350). Core is
-  Cortex-M33; the Pi's `gcc-arm-none-eabi` 14.2 supports it.
-- **The onboard LED hangs off the CYW43 WiFi chip, not a GPIO.** The
-  usual "blink an LED" smoke test needs the WiFi driver initialised, so
-  use **serial output** as the first sign of life instead.
-- **Leave WiFi uninitialised.** It is unused here, and keeping the CYW43
-  stack out of the build preserves the deterministic bare-metal timing
-  that motivated choosing this part over an ESP32.
-- Power pinout is unchanged from Pico 1: VSYS 39, GND 38, 3V3(OUT) 36,
-  VBUS 40. VSYS accepts 1.8–5.5V.
+No off-the-shelf SOES port exists for ESP32-S3 — but none existed for the
+Pico or the STM32F303 either. The work is unchanged: implement the ESC
+access layer (SPI register read/write) against the AX58100 datasheet.
 
-### Powering the Pico from the Pi (no USB cable needed)
+### Board: LilyGO T-Display-S3 (ESP32-S3)
 
-| Pi | → | Pico |
-| --- | --- | --- |
-| 5V (pin 2) | → | **VSYS (pin 39)** |
-| GND (pin 6) | → | **GND (pin 38)** |
+- Dual-core Xtensa LX7 @ 240 MHz, 16 MB flash, 8 MB PSRAM — far more
+  headroom than this project needs.
+- **Native USB-C CDC**: no serial-converter chip and no driver install.
+  Flashing and serial console both run over the one cable.
+- 3.3V logic, a direct match for the AX58100's I/O. No level shifting.
+- **The 1.9" screen is a genuine bonus**: display the live target angle
+  and EtherCAT state on-device. Much better feedback than serial alone,
+  and it makes the final demo self-explanatory.
 
-Pi pins 2 and 4 are the *same* 5V rail, not independent supplies — the
-AX58100 module on pin 4 and the Pico on pin 2 share one budget. Combined
-draw is roughly 200–250 mA, well within headroom (`throttled=0x0`
-measured with the module attached).
+Broken out on the two headers (13 usable GPIO):
 
-Cleanest layout: run one 5V and one GND jumper from the Pi to the
-breadboard power rails, then feed both the module and the Pico from
-those rails. Fewer wires into the Pi, and common ground is guaranteed.
+- P2 (left): GPIO 1, 2, 3, 10, 11, 12, 13
+- P1 (right): GPIO 43, 44, 18, 17, 21, 16
+- Plus 5V, 3V3, GND
 
-**Never** feed 5V into Pico pin 36 (3V3 OUT) — that back-drives the
-regulator and destroys it. Avoid pin 40 (VBUS) too; it back-feeds USB.
-There is no fuse on the Pi's GPIO 5V pins, so a breadboard short goes
-straight back to the supply.
+Avoid: **GPIO 3** (strapping, JTAG source select), **43/44** (UART0
+TX/RX), **17/18** (default I2C / STEMMA QT).
 
-### Flashing: powering is not programming
+### Wiring — module 10-pin header → T-Display-S3
 
-**A micro-USB data cable is effectively required.** Confirmed from the
-Pico 2 W datasheet and Raspberry Pi docs:
+GPIO 10–13 are the ESP32-S3's **native FSPI (SPI2) IOMUX pins**, so using
+them gives full-speed SPI with no GPIO-matrix routing penalty:
 
-- The Pico 2 W's USB port is **micro-USB** — the same connector as the
-  Pi 3B's power input, so a spare Android-era cable works. It must be a
-  *data* cable, not charge-only.
-- SWD is exposed as **three unpopulated through-holes labelled DEBUG**.
-  Only the "H" variants (Pico H / WH) ship with the solderless 3-pin
-  JST-SH socket. On a plain Pico 2 W, SWD therefore **requires
-  soldering** pins or wires to those holes. Viable with an iron; not a
-  no-purchase escape route otherwise.
-
-**Plug the Pico into the Raspberry Pi's USB port, not the Mac.** All four
-Pi USB ports are free, and this keeps the whole loop SSH-drivable:
-
-- Flash: hold BOOTSEL while plugging in → mounts as a mass-storage drive
-  on the Pi → copy the `.uf2` across.
-- Serial: appears as `/dev/ttyACM0` on the Pi for debug output.
-- Power: comes over the same cable, so the VSYS jumper can be removed
-  (do not feed VSYS from the Pi *and* USB at once).
-
-The Mac is not needed in the loop at all — firmware builds on the Pi with
-`gcc-arm-none-eabi` (confirmed available) plus a pico-sdk 2.x checkout.
-
-### Wiring — module 10-pin header → Pico
-
-| Module pin | Pico | Notes |
+| Module pin | ESP32-S3 GPIO | Notes |
 | --- | --- | --- |
 | `5V` | breadboard 5V rail | shared with the Pi's 5V |
-| `GND` | any GND | **common ground required** |
-| `SCK` | SPI0 SCK (GP18, pin 24) | |
-| `MOSI` | SPI0 TX (GP19, pin 25) | MCU → module |
-| `MISO` | SPI0 RX (GP16, pin 21) | module → MCU |
-| `NSS` | GP17 (pin 22) | chip select, **active low** |
-| `IRQ` | any GPIO, edge interrupt | ASIX `SINT` |
-| `SYNC0` | any GPIO, edge interrupt | distributed-clock tick |
-| `SYNC1` | optional | leave unconnected initially |
-| `LOAD` | optional input | ASIX `EEP_DONE`; verify meaning |
+| `GND` | GND | **common ground required — see below** |
+| `SCK` | **GPIO 12** (FSPICLK) | |
+| `MOSI` | **GPIO 11** (FSPID) | MCU → module |
+| `MISO` | **GPIO 13** (FSPIQ) | module → MCU |
+| `NSS` | **GPIO 10** (FSPICS0) | chip select, **active low** |
+| `IRQ` | **GPIO 16** | ASIX `SINT`, edge interrupt |
+| `SYNC0` | **GPIO 21** | distributed-clock tick, edge interrupt |
+| `SYNC1` | — | leave unconnected initially |
+| `LOAD` | — | ASIX `EEP_DONE`; verify meaning later |
 
-Drive NSS as a plain GPIO rather than hardware CS — the ESC needs chip
+Drive NSS as a **plain GPIO**, not hardware CS — the ESC needs chip
 select held low across a whole multi-byte transaction.
+
+Spare pins if needed: GPIO 1, 2.
+
+### Power and grounding (important)
+
+The T-Display-S3 is powered from its **USB-C cable** (to the Mac). The
+AX58100 module is powered from the **Pi's GPIO 5V**. Two separate
+supplies means:
+
+- [ ] **Run a ground wire from a T-Display-S3 GND pin to the breadboard
+      ground rail.** Without a shared ground reference the SPI signals
+      have no valid return path and will read garbage. This is the single
+      most likely cause of "SPI returns 0xFF or 0x00".
+- [ ] Do **not** also feed 5V from the Pi into the board while USB is
+      connected.
+
+Alternative once things work: power the board from the Pi's 5V rail
+instead and use USB only when reflashing.
+
+### Build and flash: from the Mac
+
+Unlike the Pico plan, the loop now runs on the **Mac**, since that is
+where the USB-C port is:
+
+- Toolchain: ESP-IDF v5.x (installs on macOS; provides `idf.py`).
+- Flash + monitor: `idf.py -p /dev/cu.usbmodem* flash monitor`.
+- The Pi keeps running the EtherCAT master over SSH exactly as now.
 
 ### Firmware steps
 
-- [ ] pico-sdk project in `firmware/`, CMake, C.
-- [ ] Configure SPI0 as **master, mode 3 (CPOL=1, CPHA=1), MSB-first**.
+- [ ] ESP-IDF project in `firmware/`.
+- [ ] Configure SPI2/FSPI as **master, mode 3 (CPOL=1, CPHA=1), MSB-first**.
       Start slow (~1 MHz) and raise once it works; the AX58100 tolerates
       far more, but slow first makes scope debugging easy.
 - [ ] **Smallest step first:** read ESC register `0x0000` over SPI and
       print it on USB serial. It must read **`0xc8`** — the same value
       the master already reads over EtherCAT, so you have a known-good
-      expected answer. Do not add SOES until this works.
+      expected answer. Do not add SOES until this works. Show it on the
+      screen too; that becomes the live status display later.
 - [ ] Integrate SOES; implement its HAL on top of the proven SPI reads.
 - [ ] Object dictionary / PDO mapping must match `master/src/pdo_layout.h`
       (uint16 `target_angle` out, uint16 `echo_angle` in). Note the stock
       EEPROM is currently 2 bytes out / **6** bytes in — reconcile by
       rewriting the EEPROM once the dictionary is settled.
-- [ ] `sudo servo_master eth0 set 90` → 90 appears on the Pico's serial
+- [ ] `sudo servo_master eth0 set 90` → 90 appears on the ESP32's serial
       output and echoes back (`echo=90` in the master's status line).
-      **MILESTONE 2** — data flows Pi → ESC → SPI → Pico → back.
+      **MILESTONE 2** — data flows Pi → ESC → SPI → ESP32 → back.
 
 ## Phase 5 — Servo motion (needs: SG90, separate 5V supply)
 
-- [ ] SG90 orange (signal) → a Pico PWM-capable GPIO.
-- [ ] SG90 red (5V) → its **own** 5V supply, never the Pico's 3V3 pin
+- [ ] SG90 orange (signal) → a free ESP32-S3 GPIO driven by LEDC PWM
+      (GPIO 1 or 2 are unused and suitable).
+- [ ] SG90 red (5V) → its **own** 5V supply, never the board's 3V3 pin
       (a stalled SG90 draws 500–700 mA and browns out the board).
-- [ ] SG90 brown (GND) → common ground with Pico and servo supply.
+- [ ] SG90 brown (GND) → common ground with the ESP32 and servo supply.
 - [ ] Firmware maps angle → pulse width: `0.5 + angle/180 * 2.0` ms at
       50 Hz (this exact formula is unit-tested in `master/test/test_angle.c`).
 - [ ] `sudo servo_master eth0 set 0` / `90` / `180` → servo hits each end.

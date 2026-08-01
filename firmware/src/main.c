@@ -12,7 +12,10 @@
 #include <zephyr/logging/log.h>
 
 #include "ecat_slave.h"
-#include "esc.h"
+#include "ax58100.h"
+#if defined(CONFIG_ESC_USE_SOES)
+#include "soes_app.h"
+#endif
 #include "servo.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
@@ -195,6 +198,15 @@ int main(void)
 			servo_demo();
 		}
 		LOG_ERR("CONFIG_SERVO_LOCAL_SWEEP set but no actuator present.");
+		return 0;
+	}
+
+	if (IS_ENABLED(CONFIG_ESC_USE_SOES)) {
+		/* Hands the AL state machine, the CoE mailbox and the PDO
+		 * mapping to SOES. Never returns. */
+#if defined(CONFIG_ESC_USE_SOES)
+		soes_app_run(servo_present() ? apply_servo_angle : NULL);
+#endif
 		return 0;
 	}
 

@@ -12,7 +12,7 @@
  * instrument: it visibly reacts to being selected, so driving NSS and
  * watching for that reaction tests the wire end to end.
  */
-#include "esc.h"
+#include "ax58100.h"
 
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>

@@ -5,7 +5,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#include "esc.h"
+#include "ax58100.h"
 
 LOG_MODULE_REGISTER(ecat, LOG_LEVEL_INF);
 

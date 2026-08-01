@@ -5,8 +5,8 @@
  * deliberately free of any SOES dependency so it can be proven on its
  * own first (see MILESTONE 4a in docs/bringup-checklist.md).
  */
-#ifndef ESC_H
-#define ESC_H
+#ifndef AX58100_H
+#define AX58100_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -94,4 +94,4 @@ int esc_read8(uint16_t adr);
  * See diag.c. */
 void esc_diag_run(void);
 
-#endif /* ESC_H */
+#endif /* AX58100_H */

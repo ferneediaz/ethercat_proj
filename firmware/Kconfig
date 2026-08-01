@@ -24,3 +24,20 @@ config SERVO_LOCAL_SWEEP
 
 	  Leave this off for normal operation, where the angle comes from the
 	  master as process data.
+
+config ESC_USE_SOES
+	bool "Use the SOES slave stack instead of the built-in minimal slave"
+	default n
+	help
+	  Runs OpenEtherCATsociety/SOES (vendored under firmware/soes/upstream)
+	  in place of firmware/src/ecat_slave.c. Both sit on the same ax58100.c
+	  SPI layer and present identical process data — 2 bytes out, 6 in — so
+	  the master cannot tell them apart.
+
+	  SOES additionally provides a CoE mailbox with SDO access, which the
+	  minimal slave has none of, and is the natural foundation for CiA 402.
+	  It costs a large external dependency for a node that exchanges four
+	  bytes, which is why it is not the default.
+
+	  Configuration lives in firmware/soes/ecat_options.h and must match the
+	  module's EEPROM exactly.

@@ -43,6 +43,14 @@ nema17) overlay="overlays/nema17.overlay" ;;
 esac
 
 case "$cmd" in
+loopback)
+	# Diagnostic build: MOSI must be physically joined to MISO. Proves
+	# whether a dead ESC link is an ESP32-side or module-side fault.
+	echo "Building SPI loopback diagnostic for $BOARD"
+	"$WEST" build -b "$BOARD" "$REPO/firmware" -p always \
+		-- -DCONFIG_ESC_SPI_LOOPBACK_TEST=y
+	"$WEST" flash
+	;;
 build)
 	# -p always: switching overlays without a pristine build silently
 	# reuses the previous devicetree, which looks like the overlay had
@@ -61,7 +69,7 @@ monitor)
 	"$WEST" espressif monitor
 	;;
 *)
-	echo "Usage: $0 {build|flash|monitor} [none|sg90|nema17]" >&2
+	echo "Usage: $0 {build|flash|monitor|loopback} [none|sg90|nema17]" >&2
 	exit 1
 	;;
 esac

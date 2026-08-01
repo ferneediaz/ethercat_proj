@@ -1,0 +1,15 @@
+source "Kconfig.zephyr"
+
+config ESC_SPI_LOOPBACK_TEST
+	bool "Run the SPI loopback self-test instead of talking to the ESC"
+	default n
+	help
+	  Diagnostic build. Clocks a known byte pattern out of MOSI and
+	  verifies it arrives back on MISO, which requires those two lines to
+	  be physically joined (pull the MOSI and MISO leads off P1 pins 7 and
+	  6 and connect them to each other).
+
+	  Use this when every ESC register reads 0xff. A pass proves the ESP32
+	  SPI peripheral, the pin mapping and both jumper wires are good, which
+	  narrows the fault to NSS, SCK or the module. Never leave this enabled
+	  for a normal build — the ESC is not addressed at all.

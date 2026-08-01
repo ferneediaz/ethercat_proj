@@ -38,4 +38,10 @@ int esc_write(uint16_t adr, const void *buf, size_t len);
  * otherwise the byte value in 0..255. */
 int esc_read8(uint16_t adr);
 
+/* Diagnostic: clock a known pattern out of MOSI and check it arrives back
+ * on MISO. Requires those two lines to be physically joined. Used to tell an
+ * ESP32-side fault apart from a module-side one when every ESC register
+ * reads 0xff. See loopback.c. */
+void esc_spi_loopback_test(void);
+
 #endif /* ESC_H */

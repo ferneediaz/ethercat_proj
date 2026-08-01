@@ -87,6 +87,12 @@ int main(void)
 		return 0;
 	}
 
+	if (IS_ENABLED(CONFIG_ESC_SPI_LOOPBACK_TEST)) {
+		/* Diagnostic build: the ESC is deliberately not addressed. */
+		esc_spi_loopback_test();
+		return 0;
+	}
+
 	/* The ESC needs a moment after power-up to load its EEPROM before
 	 * PDI access is meaningful. */
 	k_sleep(K_MSEC(100));

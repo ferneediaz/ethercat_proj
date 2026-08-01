@@ -304,9 +304,17 @@ control, driven by `servo_demo()` in `firmware/src/main.c`. Build with
 Remaining, and blocked on SOES (phase 4b) — the angle has to arrive over
 EtherCAT before the master can command it:
 
-- [ ] `sudo servo_master eth0 set 0` / `90` / `180` → servo hits each angle.
-- [ ] `sudo servo_master eth0 sweep` → servo sweeps continuously.
-      **MILESTONE 3** — full chain works. Record a video.
+- [x] `sudo servo_master eth0 set 0` / `90` / `180` → angle arrives and echoes.
+- [x] `sudo servo_master eth0 sweep` → continuous sweep, echo tracks target
+      within one degree (the offset is round-trip latency: the master samples
+      its own ramp a cycle before the echo returns), wkc 3/3, low_wkc 0.
+      **MILESTONE 3 PASSED 2026-08-02** — full chain works.
+
+Power note: the Pi ran the master, powered the AX58100 from header pin 4 and
+the SG90 from pin 2 simultaneously, with `vcgencmd get_throttled` polled
+every 3 s throughout the sweep. It stayed `0x0` — no undervoltage, no resets.
+The dedicated DC5V2A adapter (Jin-Hua ref 11396) is therefore still optional
+for an unloaded servo, and only becomes necessary under mechanical load.
 
 ## Future upgrades (not planned in detail)
 

@@ -12,6 +12,7 @@
 #include <zephyr/logging/log.h>
 
 #include "esc.h"
+#include "servo.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -79,6 +80,53 @@ static void hint_on_total_failure(void)
 		"module header; (3) module unpowered — check the Pi is on.");
 }
 
+/*
+ * Step to the three angles that matter first, holding each long enough to
+ * see and measure, then sweep continuously.
+ *
+ * The discrete steps come first deliberately: a servo that buzzes but does
+ * not hold position, or that slams to one end and stays there, is a power
+ * or pulse-width problem, and that is far easier to spot against a held
+ * angle than in the middle of a continuous sweep.
+ */
+static void servo_demo(void)
+{
+	static const uint16_t steps[] = {90, 0, 90, 180, 90};
+
+	for (size_t i = 0; i < ARRAY_SIZE(steps); i++) {
+		LOG_INF("servo -> %u deg", steps[i]);
+		servo_set_angle(steps[i]);
+		k_sleep(K_MSEC(1200));
+	}
+
+	LOG_INF("sweeping 0..180 continuously; ESC heartbeat every ~5 s");
+
+	uint16_t angle = 0;
+	int step = 2;
+	int ticks = 0;
+
+	while (1) {
+		servo_set_angle(angle);
+
+		if (angle == 180) {
+			step = -2;
+		} else if (angle == 0) {
+			step = 2;
+		}
+		angle = (uint16_t)(angle + step);
+
+		/* Keep proving the SPI link while the servo runs: a servo
+		 * browning out the rail shows up here as the ESC going
+		 * unreadable, which is the failure this wiring invites. */
+		if (++ticks >= 250) {
+			ticks = 0;
+			LOG_INF("heartbeat: Type=0x%02x angle=%u",
+				esc_read8(ESC_REG_TYPE), angle);
+		}
+		k_sleep(K_MSEC(20));
+	}
+}
+
 int main(void)
 {
 	LOG_INF("EtherCAT servo node — ESP32-S3 host, milestone 4a");
@@ -125,6 +173,22 @@ int main(void)
 	} else {
 		LOG_ERR("%d check(s) failed.", failures);
 		hint_on_total_failure();
+	}
+
+	/*
+	 * MILESTONE 5a — the servo moves under its own steam.
+	 *
+	 * SOES is not integrated yet, so there is no PDO to follow. Sweeping
+	 * from a local counter proves the PWM channel, the wiring and the
+	 * servo's power supply independently, which is worth separating: when
+	 * the angle later arrives over EtherCAT and nothing moves, this
+	 * milestone is what tells us the mechanical half was already good.
+	 */
+	if (servo_present()) {
+		if (servo_init() == 0) {
+			servo_demo();
+		}
+		return 0;
 	}
 
 	/* Keep re-reading so the link can be watched live while wiring is

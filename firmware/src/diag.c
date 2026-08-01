@@ -20,6 +20,25 @@
 
 LOG_MODULE_REGISTER(diag, LOG_LEVEL_INF);
 
+/*
+ * Take a pin back from the SPI controller.
+ *
+ * Zephyr initialises drivers before main(), so SPI2 has already applied its
+ * pinctrl and is driving MOSI and SCLK by the time any of this runs. On the
+ * ESP32 configuring a pin as a GPIO *input* does not undo that routing — the
+ * peripheral keeps driving it, and the pin then reads as though something
+ * external were holding it high or low.
+ *
+ * Configuring it as an output first does undo it: the Zephyr esp32 GPIO
+ * driver points the pin's output signal back at SIG_GPIO_OUT_IDX, detaching
+ * the peripheral. Only then is an input reading meaningful.
+ */
+static void claim_pin_as_gpio(const struct device *gpio0, uint8_t pin)
+{
+	gpio_pin_configure(gpio0, pin, GPIO_OUTPUT_HIGH);
+	gpio_pin_configure(gpio0, pin, GPIO_INPUT);
+}
+
 /* SPI signal pins, matching app.overlay. */
 #define PIN_NSS 10
 #define PIN_MOSI 11
@@ -45,6 +64,8 @@ static void nss_wire_test(void)
 
 	LOG_INF("--- stage 1: NSS wire test via ESC reaction ---");
 
+	claim_pin_as_gpio(gpio0, PIN_MISO);
+	claim_pin_as_gpio(gpio0, PIN_IRQ);
 	gpio_pin_configure(gpio0, PIN_MISO, GPIO_INPUT | GPIO_PULL_UP);
 	gpio_pin_configure(gpio0, PIN_IRQ, GPIO_INPUT | GPIO_PULL_UP);
 	gpio_pin_configure(gpio0, PIN_NSS, GPIO_OUTPUT_HIGH);
@@ -118,6 +139,7 @@ static void bias_sweep(void)
 	for (size_t i = 0; i < ARRAY_SIZE(monitored); i++) {
 		uint8_t pin = monitored[i].pin;
 
+		claim_pin_as_gpio(gpio0, pin);
 		gpio_pin_configure(gpio0, pin, GPIO_INPUT | GPIO_PULL_UP);
 		k_sleep(K_MSEC(5));
 		int up = gpio_pin_get(gpio0, pin);
@@ -152,6 +174,7 @@ static void pin_monitor(void)
 	LOG_INF("matching line below flips to 0, which identifies that pad.");
 
 	for (size_t i = 0; i < ARRAY_SIZE(monitored); i++) {
+		claim_pin_as_gpio(gpio0, monitored[i].pin);
 		if (gpio_pin_configure(gpio0, monitored[i].pin,
 				       GPIO_INPUT | GPIO_PULL_UP) < 0) {
 			LOG_ERR("could not configure GPIO %u", monitored[i].pin);

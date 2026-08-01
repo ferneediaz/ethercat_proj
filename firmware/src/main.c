@@ -83,13 +83,21 @@ int main(void)
 {
 	LOG_INF("EtherCAT servo node — ESP32-S3 host, milestone 4a");
 
-	if (esc_init() != 0) {
+	if (IS_ENABLED(CONFIG_ESC_DIAG)) {
+		/*
+		 * Runs BEFORE esc_init() and never returns. Order matters: the
+		 * diagnostics read the SPI pins as plain GPIOs, and once the SPI
+		 * controller has claimed them it keeps driving MOSI and SCLK.
+		 * On the ESP32 a later gpio_pin_configure() does not detach the
+		 * peripheral's output routing, so initialising SPI first makes
+		 * GPIO 11 and 12 report as externally driven when nothing is
+		 * attached to them at all.
+		 */
+		esc_diag_run();
 		return 0;
 	}
 
-	if (IS_ENABLED(CONFIG_ESC_DIAG)) {
-		/* Diagnostic build: never returns, ends in the live pin monitor. */
-		esc_diag_run();
+	if (esc_init() != 0) {
 		return 0;
 	}
 

@@ -70,10 +70,22 @@ int esc_read(uint16_t adr, void *buf, size_t len)
 	uint8_t rx[ESC_ADDR_HDR_LEN + ESC_WAIT_STATE_LEN + ESC_MAX_XFER];
 
 	esc_fill_header(tx, adr, ESC_CMD_READ_WS);
-	/* Wait state byte and the data phase: MOSI content is ignored by
-	 * the ESC, but the last byte clocked out must be the read
-	 * termination byte (0xff) so the ESC ends the access cleanly. */
-	memset(&tx[ESC_ADDR_HDR_LEN], 0xff, total - ESC_ADDR_HDR_LEN);
+	/*
+	 * Only the LAST byte clocked out may be 0xff.
+	 *
+	 * 0xff is the read-termination byte: the ESC ends the access as soon
+	 * as it sees one, and keeps auto-incrementing its address while it
+	 * sees anything else. Filling the whole data phase with 0xff — as
+	 * this did originally — terminates after the first data byte, so a
+	 * multi-byte read returns one correct byte followed by zeros.
+	 *
+	 * Single-byte reads are unaffected, which is why every register check
+	 * in milestone 4a passed while reading a 4-byte SyncManager
+	 * configuration silently returned 0x0000 / length 0.
+	 */
+	tx[ESC_ADDR_HDR_LEN] = 0xff; /* wait state byte, left as before */
+	memset(&tx[ESC_ADDR_HDR_LEN + ESC_WAIT_STATE_LEN], 0x00, len);
+	tx[total - 1] = 0xff;
 
 	const struct spi_buf tx_buf = {.buf = tx, .len = total};
 	const struct spi_buf rx_buf = {.buf = rx, .len = total};

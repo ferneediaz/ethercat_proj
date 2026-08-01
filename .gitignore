@@ -3,3 +3,4 @@ build/
 *.out
 test_angle
 .DS_Store
+.cache/

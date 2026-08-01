@@ -230,24 +230,50 @@ instead and use USB only when reflashing.
 
 ### Build and flash: from the Mac
 
-Unlike the Pico plan, the loop now runs on the **Mac**, since that is
-where the USB-C port is:
+The loop now runs on the **Mac**, since that is where the USB-C port is.
+The Pi keeps running the EtherCAT master over SSH exactly as now.
 
-- Toolchain: ESP-IDF v5.x (installs on macOS; provides `idf.py`).
-- Flash + monitor: `idf.py -p /dev/cu.usbmodem* flash monitor`.
-- The Pi keeps running the EtherCAT master over SSH exactly as now.
+**Stack decided 2026-08-01: Zephyr RTOS**, not ESP-IDF. Built for the
+in-tree **`esp32s3_devkitc`** board and flashed to the T-Display-S3 —
+same SoC, and nothing here needs DevKitC-specific peripherals, so no
+custom board port is required.
+
+Why Zephyr: it has a real stepper subsystem
+(`zephyr,gpio-step-dir-stepper-ctrl`), so SG90-vs-NEMA17 becomes two
+devicetree overlays instead of hand-written motion code, and
+SOES + Zephyr + devicetree is a much better fit for an EtherCAT job than
+ESP-IDF.
+
+**Accepted trade-off: the 1.9" display will not work.** It is an 8-bit
+i8080 parallel ST7789 and Zephyr's ST7789 driver is SPI-only. Under
+ESP-IDF it would have worked via `esp_lcd`. Status goes to the USB
+serial console instead.
+
+```sh
+./scripts/fw.sh build          # milestone 4a, no motor
+./scripts/fw.sh build sg90     # phase 5
+./scripts/fw.sh build nema17   # phase 6
+./scripts/fw.sh flash && ./scripts/fw.sh monitor
+```
 
 ### Firmware steps
 
-- [ ] ESP-IDF project in `firmware/`.
-- [ ] Configure SPI2/FSPI as **master, mode 3 (CPOL=1, CPHA=1), MSB-first**.
-      Start slow (~1 MHz) and raise once it works; the AX58100 tolerates
-      far more, but slow first makes scope debugging easy.
-- [ ] **Smallest step first:** read ESC register `0x0000` over SPI and
-      print it on USB serial. It must read **`0xc8`** — the same value
-      the master already reads over EtherCAT, so you have a known-good
-      expected answer. Do not add SOES until this works. Show it on the
-      screen too; that becomes the live status display later.
+- [x] Zephyr application in `firmware/` (`app.overlay`, `src/esc.c`,
+      `src/main.c`, actuator overlays, custom `asix,ax58100` binding).
+- [x] SPI2/FSPI configured as **master, mode 3 (CPOL=1, CPHA=1),
+      MSB-first**, 1 MHz to start. Raise it once the link works; slow
+      first makes a scope trace easy to read.
+- [ ] **Smallest step first:** read ESC register `0x0000` over SPI. It
+      must read **`0xc8`** — the same value the master already reads over
+      EtherCAT, so there is a known-good expected answer. `src/main.c`
+      also cross-checks `0x0140`, `0x0141` and `0x0150` against the
+      values `servo_master eth0 regs` reported. Do not add SOES until
+      this passes.
+- [ ] If register `0x0000` reads `0x00` or `0xff`, that is a **dead SPI
+      link, not a config problem**. In order of likelihood: no common
+      ground between the USB-powered ESP32 and the Pi-powered module;
+      MISO/MOSI swapped (they are adjacent on the header); module
+      unpowered.
 - [ ] Integrate SOES; implement its HAL on top of the proven SPI reads.
 - [ ] Object dictionary / PDO mapping must match `master/src/pdo_layout.h`
       (uint16 `target_angle` out, uint16 `echo_angle` in). Note the stock

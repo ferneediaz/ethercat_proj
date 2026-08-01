@@ -1,0 +1,58 @@
+/*
+ * Actuator overlay: NEMA 17 stepper via an A4988 (phase 6).
+ *
+ *   west build -b esp32s3_devkitc/esp32s3/procpu firmware \
+ *       -- -DEXTRA_DTC_OVERLAY_FILE=overlays/nema17.overlay
+ *
+ * Motor 17HS4023: 1.8 deg/step, 1.0 A/phase, 4.1 ohm/phase.
+ * The A4988 runs from 12 V on VMOT with the 100 uF capacitor fitted;
+ * its VDD logic rail takes 5 V. STEP/DIR/EN are driven at 3.3 V, which
+ * is fine — the A4988's logic-high threshold is 2.0 V.
+ *
+ * NOTE ON ZEPHYR VERSION: this uses the post-v4.4 stepper API, where
+ * step-gpios/dir-gpios live on a separate motion-controller node rather
+ * than on the driver node. Tutorials written before v4.4 show the old
+ * layout and will not build.
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	stepper_ctrl: motion-controller {
+		compatible = "zephyr,gpio-step-dir-stepper-ctrl";
+		step-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
+		dir-gpios = <&gpio0 17 GPIO_ACTIVE_HIGH>;
+
+		/*
+		 * No `stepper-driver` phandle on purpose. The in-tree
+		 * hardware drivers (allegro,a4979 / adi,tmc2209) expect
+		 * microstep and reset pins under MCU control. On the
+		 * expansion board bought for this project microstepping is
+		 * set by DIP switches and RESET/SLEEP are tied together on
+		 * the PCB, so there is nothing for a driver node to own —
+		 * the generic motion controller alone is the honest model.
+		 *
+		 * If a TMC2209 is fitted instead, add a stepper-driver node
+		 * and point this at it; the application code is unchanged.
+		 */
+	};
+
+	/*
+	 * A4988 ENABLE is active low. Held as a plain GPIO rather than a
+	 * driver property so the app can release the motor when idle —
+	 * an energised stepper holds torque and gets hot doing nothing.
+	 */
+	stepper_enable: stepper-enable {
+		compatible = "gpio-leds";
+
+		stepper_en_gpio: stepper_en_gpio {
+			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+			label = "A4988 ENABLE";
+		};
+	};
+
+	aliases {
+		stepper-ctrl = &stepper_ctrl;
+		stepper-enable = &stepper_en_gpio;
+	};
+};

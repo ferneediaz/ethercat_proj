@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EtherCAT Servo Node — Wiring Diagram</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #111; margin: 0; font-size: 10.5pt; line-height: 1.45;
+  }
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  h1 { font-size: 19pt; margin: 0 0 2px; letter-spacing: -0.2px; }
+  h2 { font-size: 13.5pt; margin: 14px 0 6px; border-bottom: 1.5px solid #111;
+       padding-bottom: 3px; }
+  h3 { font-size: 11pt; margin: 10px 0 4px; }
+  .sub { color: #555; font-size: 9.5pt; margin: 0 0 8px; }
+  svg { width: 100%; height: auto; display: block; }
+  svg.d1 { height: 104mm; width: auto; margin: 0 auto; }
+  svg.d2 { height: 68mm;  width: auto; margin: 0 auto; }
+  svg.d3 { height: 60mm;  width: auto; margin: 0 auto; }
+  svg.d4 { height: 42mm;  width: auto; margin: 0 auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 4px 0 8px; }
+  th, td { border: 1px solid #bbb; padding: 3px 6px; text-align: left; }
+  th { background: #f0f0f0; font-weight: 600; }
+  td.mono, th.mono { font-family: "SF Mono", Menlo, monospace; font-size: 8.5pt; }
+  .cols { display: flex; gap: 16px; }
+  .cols > div { flex: 1; }
+  .warn { border-left: 4px solid #d92b2b; background: #fdf1f1;
+          padding: 6px 10px; margin: 8px 0; font-size: 9.5pt; }
+  .note { border-left: 4px solid #1f6feb; background: #f0f5fd;
+          padding: 6px 10px; margin: 8px 0; font-size: 9.5pt; }
+  .ok   { border-left: 4px solid #1a8f4a; background: #f0f8f3;
+          padding: 6px 10px; margin: 8px 0; font-size: 9.5pt; }
+  ul, ol { margin: 4px 0 8px; padding-left: 20px; }
+  li { margin: 2px 0; }
+  code { font-family: "SF Mono", Menlo, monospace; font-size: 9pt;
+         background: #f2f2f2; padding: 0 3px; border-radius: 2px; }
+  .legend { font-size: 9pt; color: #444; margin-top: 6px; }
+  .sw { display: inline-block; width: 20px; height: 3px; vertical-align: middle;
+        margin: 0 4px 0 12px; }
+  .foot { font-size: 8pt; color: #777; margin-top: 8px; }
+  .pill { font-size: 8pt; padding: 1px 5px; border-radius: 8px; color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PAGE 1 ==================== -->
+<div class="page">
+<h1>EtherCAT Servo Node — Complete Wiring</h1>
+<p class="sub">Raspberry Pi 3B (SOEM master) → AX58100 ESC → LilyGO T-Display-S3 (ESP32-S3) → SG90 / NEMA 17 &nbsp;·&nbsp; Page 1 of 4: System overview</p>
+
+<svg class="d1" viewBox="0 0 1100 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6"
+            markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+    </marker>
+    <style>
+      .box  { fill:#fbfbfb; stroke:#222; stroke-width:2; rx:8; }
+      .t    { font: 600 13px sans-serif; fill:#111; }
+      .ts   { font: 10.5px sans-serif; fill:#555; }
+      .lbl  { font: 10.5px sans-serif; fill:#111; }
+      .lblb { font: 600 10.5px sans-serif; fill:#111; }
+      .w-usb { stroke:#7b3fbf; stroke-width:2.5; fill:none; marker-end:url(#a); }
+      .w-eth { stroke:#1a8f4a; stroke-width:3;   fill:none; marker-end:url(#a); }
+      .w-sig { stroke:#1f6feb; stroke-width:2.5; fill:none; marker-end:url(#a); }
+      .w-5v  { stroke:#d92b2b; stroke-width:2.5; fill:none; marker-end:url(#a); }
+      .w-gnd { stroke:#222;    stroke-width:2;   fill:none; }
+    </style>
+  </defs>
+
+  <!-- boxes -->
+  <rect class="box" x="30"  y="22"  width="180" height="52"/>
+  <text class="t"  x="46" y="44">MacBook</text>
+  <text class="ts" x="46" y="61">ESP-IDF build · flash · serial</text>
+
+  <rect class="box" x="30"  y="150" width="200" height="112"/>
+  <text class="t"  x="46" y="176">Raspberry Pi 3B</text>
+  <text class="ts" x="46" y="194">SOEM master</text>
+  <text class="ts" x="46" y="210">servo_master eth0 …</text>
+  <rect x="46" y="222" width="92" height="16" rx="8" fill="#d92b2b"/>
+  <text x="52" y="234" font="8px sans-serif" font-size="9" fill="#fff">wall USB 5V</text>
+
+  <rect class="box" x="310" y="150" width="200" height="112"/>
+  <text class="t"  x="326" y="176">AX58100 module</text>
+  <text class="ts" x="326" y="194">EtherCAT Slave Controller</text>
+  <text class="ts" x="326" y="210">10-pin SPI header</text>
+  <rect x="326" y="222" width="118" height="16" rx="8" fill="#d92b2b"/>
+  <text x="332" y="234" font-size="9" fill="#fff">5V from Pi pin 4</text>
+
+  <rect class="box" x="600" y="140" width="200" height="132"/>
+  <text class="t"  x="616" y="166">LilyGO T-Display-S3</text>
+  <text class="ts" x="616" y="184">ESP32-S3 · SOES slave stack</text>
+  <text class="ts" x="616" y="200">SPI master → ESC</text>
+  <text class="ts" x="616" y="216">PWM / STEP-DIR → motors</text>
+  <rect x="616" y="230" width="104" height="16" rx="8" fill="#7b3fbf"/>
+  <text x="622" y="242" font-size="9" fill="#fff">USB-C 5V (Mac)</text>
+
+  <rect class="box" x="880" y="40"  width="190" height="66"/>
+  <text class="t"  x="896" y="64">SG90 servo</text>
+  <text class="ts" x="896" y="81">50 Hz PWM · phase 5</text>
+  <rect x="896" y="88" width="76" height="14" rx="7" fill="#d92b2b"/>
+  <text x="902" y="99" font-size="8.5" fill="#fff">own 5V</text>
+
+  <rect class="box" x="880" y="150" width="190" height="80"/>
+  <text class="t"  x="896" y="174">A4988 driver</text>
+  <text class="ts" x="896" y="191">on expansion board</text>
+  <rect x="896" y="200" width="60" height="14" rx="7" fill="#e07b00"/>
+  <text x="902" y="211" font-size="8.5" fill="#fff">12 V</text>
+  <rect x="962" y="200" width="66" height="14" rx="7" fill="#1f6feb"/>
+  <text x="968" y="211" font-size="8.5" fill="#fff">5V logic</text>
+
+  <rect class="box" x="880" y="270" width="190" height="64"/>
+  <text class="t"  x="896" y="294">NEMA 17 stepper</text>
+  <text class="ts" x="896" y="311">17HS4023 · 1.0 A/phase</text>
+
+  <rect class="box" x="250" y="430" width="190" height="52"/>
+  <text class="t"  x="266" y="452">5 V supply</text>
+  <text class="ts" x="266" y="469">servo only — see p.3</text>
+
+  <rect class="box" x="490" y="430" width="190" height="52"/>
+  <text class="t"  x="506" y="452">12 V supply</text>
+  <text class="ts" x="506" y="469">stepper only — see p.3</text>
+
+  <!-- data links -->
+  <path class="w-usb" d="M 210,48 H 690 V 140"/>
+  <text class="lblb" x="330" y="40">USB-C — power + flash + serial console</text>
+
+  <path class="w-eth" d="M 230,178 H 310"/>
+  <text class="lbl" x="270" y="170" text-anchor="middle">Cat5e</text>
+  <text class="ts"  x="270" y="140" text-anchor="middle">eth0 → IN / Port 0</text>
+
+  <path class="w-5v" d="M 230,212 H 310"/>
+  <text class="lbl" x="270" y="228" text-anchor="middle" font-size="9.5">5V + GND</text>
+
+  <path class="w-sig" d="M 510,190 H 600"/>
+  <text class="lbl" x="555" y="172" text-anchor="middle" font-size="9.5">SPI ×4</text>
+  <text class="lbl" x="555" y="184" text-anchor="middle" font-size="9.5">IRQ, SYNC0</text>
+
+  <path class="w-sig" d="M 800,166 H 845 V 72 H 880"/>
+  <text class="lbl" x="806" y="132" font-size="9.5">PWM</text>
+  <text class="lbl" x="806" y="144" font-size="9.5">GPIO 1</text>
+
+  <path class="w-sig" d="M 800,206 H 880"/>
+  <text class="lbl" x="812" y="200" font-size="9.5">STEP/DIR/EN</text>
+
+  <path class="w-sig" d="M 975,230 V 270"/>
+  <text class="lbl" x="985" y="255" font-size="9.5">4-wire coils</text>
+
+  <!-- ground rail -->
+  <rect x="30" y="540" width="1040" height="12" fill="#222" rx="3"/>
+  <text class="lblb" x="30" y="574">COMMON GROUND RAIL — every block below must share this. See page 4.</text>
+
+  <path class="w-gnd" d="M 80,262 V 540"/>
+  <path class="w-gnd" d="M 440,262 V 540"/>
+  <path class="w-gnd" d="M 760,272 V 540"/>
+  <path class="w-gnd" d="M 340,482 V 540"/>
+  <path class="w-gnd" d="M 580,482 V 540"/>
+  <path class="w-gnd" d="M 900,334 V 380 H 830 V 540"/>
+  <path class="w-gnd" d="M 900,106 V 126 H 812 V 540"/>
+</svg>
+
+<div class="legend">
+  <b>Legend:</b>
+  <span class="sw" style="background:#7b3fbf"></span>USB
+  <span class="sw" style="background:#1a8f4a"></span>Ethernet
+  <span class="sw" style="background:#1f6feb"></span>Signal
+  <span class="sw" style="background:#d92b2b"></span>5&nbsp;V
+  <span class="sw" style="background:#e07b00"></span>12&nbsp;V
+  <span class="sw" style="background:#222"></span>Ground
+  &nbsp;·&nbsp; Lines that cross are <b>not</b> connected — only lines meeting the ground rail are joined.
+</div>
+
+<div class="note">
+<b>Three independent power sources</b> feed this system: the Pi's wall adapter (which also powers the ESC),
+the Mac's USB-C (which powers the ESP32), and the motor supply. They are <b>only</b> tied together by the
+common ground rail. That single shared ground is what makes every signal in this diagram meaningful — see page 4.
+</div>
+</div>
+
+<!-- ==================== PAGE 2 ==================== -->
+<div class="page">
+<h1>Page 2 — Pi → AX58100 → ESP32-S3</h1>
+<p class="sub">The EtherCAT and SPI section. Build and verify this before any motor is connected.</p>
+
+<svg class="d2" viewBox="0 0 1100 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .hp { fill:#fff; stroke:#333; stroke-width:1.5; }
+      .hl { font: 13px "SF Mono", Menlo, monospace; fill:#111; }
+      .hh { font: 600 14px sans-serif; fill:#111; }
+      .cw { stroke-width:2.2; fill:none; }
+    </style>
+  </defs>
+
+  <!-- Pi header detail -->
+  <text class="hh" x="20" y="20">Raspberry Pi 3B — 40-pin header</text>
+  <text class="hl" x="20" y="42" fill="#555">pin 1 = corner nearest microSD</text>
+  <text class="hl" x="20" y="60" fill="#555">odd row = along board edge</text>
+  <rect x="20" y="72" width="248" height="46" fill="#f7f7f7" stroke="#333" stroke-width="1.5" rx="4"/>
+  <circle cx="46"  cy="95" r="10" fill="#fff" stroke="#333"/>
+  <text class="hl" x="41" y="100">1</text>
+  <circle cx="80"  cy="95" r="10" fill="#d92b2b" stroke="#333"/>
+  <text class="hl" x="75" y="100" fill="#fff">2</text>
+  <circle cx="114" cy="95" r="10" fill="#fff" stroke="#333"/>
+  <text class="hl" x="109" y="100">3</text>
+  <circle cx="148" cy="95" r="10" fill="#d92b2b" stroke="#333"/>
+  <text class="hl" x="143" y="100" fill="#fff">4</text>
+  <circle cx="182" cy="95" r="10" fill="#fff" stroke="#333"/>
+  <text class="hl" x="177" y="100">5</text>
+  <circle cx="216" cy="95" r="10" fill="#222" stroke="#333"/>
+  <text class="hl" x="211" y="100" fill="#fff">6</text>
+  <text class="hl" x="140" y="140" fill="#d92b2b">5V</text>
+  <text class="hl" x="200" y="140" fill="#222">GND</text>
+
+  <!-- module header -->
+  <text class="hh" x="330" y="20">AX58100 module — 10-pin header</text>
+  <rect x="330" y="34" width="150" height="330" fill="#f7f7f7" stroke="#333" stroke-width="1.5" rx="4"/>
+  <g class="hl">
+    <rect class="hp" x="344" y="44"  width="122" height="28"/><text x="352" y="63">1  5V</text>
+    <rect class="hp" x="344" y="76"  width="122" height="28"/><text x="352" y="95">2  GND</text>
+    <rect class="hp" x="344" y="108" width="122" height="28"/><text x="352" y="127">3  SYNC0</text>
+    <rect class="hp" x="344" y="140" width="122" height="28"/><text x="352" y="159">4  SYNC1</text>
+    <rect class="hp" x="344" y="172" width="122" height="28"/><text x="352" y="191">5  SCK</text>
+    <rect class="hp" x="344" y="204" width="122" height="28"/><text x="352" y="223">6  MISO</text>
+    <rect class="hp" x="344" y="236" width="122" height="28"/><text x="352" y="255">7  MOSI</text>
+    <rect class="hp" x="344" y="268" width="122" height="28"/><text x="352" y="287">8  IRQ</text>
+    <rect class="hp" x="344" y="300" width="122" height="28"/><text x="352" y="319">9  NSS</text>
+    <rect class="hp" x="344" y="332" width="122" height="28"/><text x="352" y="351">10 LOAD</text>
+  </g>
+
+  <!-- ESP32 header -->
+  <text class="hh" x="820" y="20">LilyGO T-Display-S3</text>
+  <rect x="820" y="34" width="150" height="330" fill="#f7f7f7" stroke="#333" stroke-width="1.5" rx="4"/>
+  <g class="hl">
+    <rect class="hp" x="834" y="44"  width="122" height="28"/><text x="842" y="63">GND</text>
+    <rect class="hp" x="834" y="108" width="122" height="28"/><text x="842" y="127">GPIO 21</text>
+    <rect class="hp" x="834" y="172" width="122" height="28"/><text x="842" y="191">GPIO 12</text>
+    <rect class="hp" x="834" y="204" width="122" height="28"/><text x="842" y="223">GPIO 13</text>
+    <rect class="hp" x="834" y="236" width="122" height="28"/><text x="842" y="255">GPIO 11</text>
+    <rect class="hp" x="834" y="268" width="122" height="28"/><text x="842" y="287">GPIO 16</text>
+    <rect class="hp" x="834" y="300" width="122" height="28"/><text x="842" y="319">GPIO 10</text>
+  </g>
+
+  <!-- wires module -> esp -->
+  <path class="cw" stroke="#222"    d="M 466,90  H 560 V 58  H 834"/>
+  <path class="cw" stroke="#1f6feb" d="M 466,122 H 834"/>
+  <path class="cw" stroke="#1f6feb" d="M 466,186 H 834"/>
+  <path class="cw" stroke="#1f6feb" d="M 466,218 H 834"/>
+  <path class="cw" stroke="#1f6feb" d="M 466,250 H 834"/>
+  <path class="cw" stroke="#1f6feb" d="M 466,282 H 834"/>
+  <path class="cw" stroke="#1f6feb" d="M 466,314 H 834"/>
+
+  <!-- pi power to module -->
+  <path class="cw" stroke="#d92b2b" d="M 148,105 V 172 H 300 V 58 H 344"/>
+  <path class="cw" stroke="#222"    d="M 216,105 V 156 H 276 V 90 H 344"/>
+  <text class="hl" x="24" y="196" fill="#d92b2b">pin 4 → module 5V</text>
+  <text class="hl" x="24" y="216" fill="#222">pin 6 → module GND + rail</text>
+
+  <text class="hl" x="600" y="112" fill="#555">SYNC0</text>
+  <text class="hl" x="600" y="176" fill="#555">SCK  (FSPICLK)</text>
+  <text class="hl" x="600" y="208" fill="#555">MISO (FSPIQ)</text>
+  <text class="hl" x="600" y="240" fill="#555">MOSI (FSPID)</text>
+  <text class="hl" x="600" y="272" fill="#555">IRQ</text>
+  <text class="hl" x="600" y="304" fill="#555">NSS  (FSPICS0)</text>
+
+  <text class="hl" x="500" y="352" fill="#999">SYNC1 and LOAD: leave unconnected</text>
+</svg>
+
+<div class="cols">
+<div>
+<h3>Connection table</h3>
+<table>
+<tr><th>Module pin</th><th>Goes to</th><th>Wire</th></tr>
+<tr><td class="mono">1 · 5V</td><td class="mono">Pi header pin 4 (5V)</td><td>red</td></tr>
+<tr><td class="mono">2 · GND</td><td class="mono">Pi pin 6 + ground rail</td><td>black</td></tr>
+<tr><td class="mono">3 · SYNC0</td><td class="mono">ESP32 GPIO 21</td><td>blue</td></tr>
+<tr><td class="mono">4 · SYNC1</td><td>— not connected</td><td>—</td></tr>
+<tr><td class="mono">5 · SCK</td><td class="mono">ESP32 GPIO 12</td><td>blue</td></tr>
+<tr><td class="mono">6 · MISO</td><td class="mono">ESP32 GPIO 13</td><td>blue</td></tr>
+<tr><td class="mono">7 · MOSI</td><td class="mono">ESP32 GPIO 11</td><td>blue</td></tr>
+<tr><td class="mono">8 · IRQ</td><td class="mono">ESP32 GPIO 16</td><td>blue</td></tr>
+<tr><td class="mono">9 · NSS</td><td class="mono">ESP32 GPIO 10</td><td>blue</td></tr>
+<tr><td class="mono">10 · LOAD</td><td>— not connected</td><td>—</td></tr>
+<tr><td>Pi <span class="mono">eth0</span></td><td>Module <b>IN / Port 0</b> jack, Cat5e</td><td>—</td></tr>
+</table>
+<p class="foot" style="margin-top:2px">Verify before proceeding: firmware reads ESC register
+<code>0x0000</code> over SPI and gets <code>0xc8</code> — the same value the Pi already reads
+over EtherCAT.</p>
+</div>
+<div>
+<h3>Why these pins</h3>
+<p style="margin:2px 0 8px">GPIO 10–13 are the ESP32-S3's native <b>FSPI (SPI2) IOMUX</b> pins, so SPI
+runs at full speed with no GPIO-matrix routing penalty.</p>
+<table>
+<tr><th>Setting</th><th class="mono">Value</th><th>Source</th></tr>
+<tr><td>SPI mode</td><td class="mono">3 (CPOL=1, CPHA=1)</td><td>reg 0x0150</td></tr>
+<tr><td>Bit order</td><td class="mono">MSB first</td><td>datasheet</td></tr>
+<tr><td>Chip select</td><td class="mono">active LOW</td><td>reg 0x0150</td></tr>
+</table>
+<div class="ok">
+<b>Already confirmed on your hardware</b> (read live over EtherCAT with
+<code>servo_master eth0 regs</code>): PDI Control = <code>0x05</code> (SPI Slave),
+so the <code>SCS_FUNC</code> pull-up is already fitted on-board. <b>You do not need a 4.7K resistor.</b>
+</div>
+<div class="warn">
+<b>MISO / MOSI are adjacent on the header.</b> Swapping them is the classic mistake —
+it fails silently, reading <code>0x00</code> forever with no other symptom.
+Drive <b>NSS as a plain GPIO</b>, not hardware CS: the ESC needs it held low across a whole
+multi-byte transaction.
+</div>
+</div>
+</div>
+</div>
+
+<!-- ==================== PAGE 3 ==================== -->
+<div class="page">
+<h1>Page 3 — Motors</h1>
+<p class="sub">SG90 first (phase 5), NEMA 17 later (phase 6). Both can stay wired at once — they use different GPIO.</p>
+
+<svg class="d3" viewBox="0 0 1100 340" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .b2 { fill:#fbfbfb; stroke:#222; stroke-width:2; rx:8; }
+      .t2 { font: 600 12px sans-serif; fill:#111; }
+      .s2 { font: 10px sans-serif; fill:#555; }
+      .m2 { font: 10.5px "SF Mono", Menlo, monospace; fill:#111; }
+      .c2 { stroke-width:2.4; fill:none; }
+    </style>
+  </defs>
+
+  <!-- SG90 side -->
+  <text class="t2" x="20" y="18">SG90 servo — phase 5</text>
+  <rect class="b2" x="20" y="30" width="150" height="96"/>
+  <text class="t2" x="34" y="54">ESP32-S3</text>
+  <text class="m2" x="34" y="74">GPIO 1</text>
+  <text class="m2" x="34" y="92">GND</text>
+  <text class="s2" x="34" y="112">LEDC PWM 50 Hz</text>
+
+  <rect class="b2" x="330" y="30" width="150" height="96"/>
+  <text class="t2" x="344" y="54">SG90</text>
+  <text class="m2" x="344" y="74" fill="#e07b00">orange sig</text>
+  <text class="m2" x="344" y="92" fill="#d92b2b">red 5V</text>
+  <text class="m2" x="344" y="110" fill="#5b3a1e">brown GND</text>
+
+  <rect class="b2" x="330" y="160" width="150" height="60"/>
+  <text class="t2" x="344" y="184">5 V supply</text>
+  <text class="s2" x="344" y="202">≥1 A, servo only</text>
+
+  <path class="c2" stroke="#1f6feb" d="M 170,70 H 330"/>
+  <text class="s2" x="200" y="62">signal</text>
+  <path class="c2" stroke="#d92b2b" d="M 405,160 V 96"/>
+  <path class="c2" stroke="#222"    d="M 20,92 H 8 V 300 H 560"/>
+  <path class="c2" stroke="#222"    d="M 360,126 V 300"/>
+  <path class="c2" stroke="#222"    d="M 440,220 V 300"/>
+
+  <!-- stepper side -->
+  <text class="t2" x="600" y="18">NEMA 17 stepper — phase 6</text>
+  <rect class="b2" x="600" y="30" width="140" height="130"/>
+  <text class="t2" x="614" y="54">ESP32-S3</text>
+  <text class="m2" x="614" y="76">GPIO 2  STEP</text>
+  <text class="m2" x="614" y="94">GPIO 17 DIR</text>
+  <text class="m2" x="614" y="112">GPIO 18 EN</text>
+  <text class="m2" x="614" y="130">GND</text>
+
+  <rect class="b2" x="810" y="30" width="160" height="130"/>
+  <text class="t2" x="824" y="54">A4988</text>
+  <text class="s2" x="824" y="70">on expansion board</text>
+  <text class="m2" x="824" y="92">STEP DIR EN</text>
+  <text class="m2" x="824" y="112" fill="#e07b00">VMOT 12V</text>
+  <text class="m2" x="824" y="130" fill="#1f6feb">VDD 5V logic</text>
+  <text class="m2" x="824" y="148">1A 1B 2A 2B</text>
+
+  <rect class="b2" x="810" y="196" width="160" height="54"/>
+  <text class="t2" x="824" y="218">NEMA 17</text>
+  <text class="s2" x="824" y="236">17HS4023 · JST XHP-4</text>
+
+  <rect class="b2" x="600" y="196" width="140" height="54"/>
+  <text class="t2" x="614" y="218">12 V supply</text>
+  <text class="s2" x="614" y="236">≥2 A</text>
+
+  <path class="c2" stroke="#1f6feb" d="M 740,84 H 810"/>
+  <path class="c2" stroke="#e07b00" d="M 700,196 V 176 H 790 V 112 H 810"/>
+  <path class="c2" stroke="#222"    d="M 660,160 V 300"/>
+  <path class="c2" stroke="#222"    d="M 660,300 H 1010 V 250"/>
+  <path class="c2" stroke="#222"    d="M 700,250 V 300"/>
+  <path class="c2" stroke="#222"    d="M 890,160 V 196"/>
+
+  <!-- capacitor -->
+  <path class="c2" stroke="#e07b00" d="M 1000,112 H 1030"/>
+  <path class="c2" stroke="#222"    d="M 1030,132 V 250"/>
+  <line x1="1018" y1="112" x2="1018" y2="132" stroke="#222" stroke-width="2.4"/>
+  <line x1="1042" y1="112" x2="1042" y2="132" stroke="#222" stroke-width="2.4"/>
+  <text class="s2" x="1000" y="100">100 µF</text>
+  <text class="s2" x="1000" y="152">25 V</text>
+  <text class="c2" x="970" y="112"></text>
+
+  <rect x="20" y="294" width="1050" height="10" fill="#222" rx="3"/>
+  <text class="t2" x="20" y="326">COMMON GROUND RAIL</text>
+</svg>
+
+<div class="cols">
+<div>
+<h3>ESP32-S3 pin budget</h3>
+<table>
+<tr><th>GPIO</th><th>Use</th><th>Phase</th></tr>
+<tr><td class="mono">10,11,12,13</td><td>SPI to ESC (NSS/MOSI/SCK/MISO)</td><td>4</td></tr>
+<tr><td class="mono">16</td><td>ESC IRQ</td><td>4</td></tr>
+<tr><td class="mono">21</td><td>ESC SYNC0</td><td>4</td></tr>
+<tr><td class="mono">1</td><td>SG90 PWM signal</td><td>5</td></tr>
+<tr><td class="mono">2</td><td>Stepper STEP</td><td>6</td></tr>
+<tr><td class="mono">17</td><td>Stepper DIR</td><td>6</td></tr>
+<tr><td class="mono">18</td><td>Stepper EN (active low)</td><td>6</td></tr>
+<tr><td class="mono">3, 43, 44</td><td><b>avoid</b> — strapping / UART0</td><td>—</td></tr>
+</table>
+<div class="note">
+<b>3.3 V logic into a 5 V board is fine here.</b> The A4988's logic-high threshold is
+2.0 V, so the ESP32's 3.3 V STEP/DIR/EN signals register correctly. Feed the board's
+<code>VDD</code> logic rail 5 V; no level shifter needed.
+</div>
+</div>
+<div>
+<h3>Setting the A4988 current limit — do this before the motor spins</h3>
+<p style="margin:2px 0 6px">Turn the trimpot and measure <code>Vref</code> between the pot's
+metal top and GND with the multimeter, 12 V applied, motor <b>disconnected</b>:</p>
+<table>
+<tr><th>Sense resistor (marked on board)</th><th>Formula</th><th>Target for 1.0 A</th></tr>
+<tr><td class="mono">R100 = 0.1 Ω</td><td class="mono">Vref = I × 0.8</td><td class="mono"><b>0.80 V</b></td></tr>
+<tr><td class="mono">R050 = 0.05 Ω</td><td class="mono">Vref = I × 0.4</td><td class="mono"><b>0.40 V</b></td></tr>
+</table>
+<div class="warn">
+<b>Fit the 100 µF capacitor across VMOT and GND before first power-up.</b>
+Inductive spikes from the coils will destroy an A4988 otherwise — this is the single
+most common way these boards die, and both the Allegro datasheet and Pololu's notes
+call it out explicitly.
+<br><br>
+<b>Never unplug the motor while 12 V is on.</b> Same failure mode.
+</div>
+<h3>Identifying the coil pairs</h3>
+<p style="margin:2px 0">Set the multimeter to ohms. Two wires reading about <b>4.1 Ω</b>
+are one coil; across different coils reads open. Your 17HS4023's datasheet phase
+resistance is 4.1 Ω, so this is a definitive check — do not trust wire colour.
+Pair them into <code>1A/1B</code> and <code>2A/2B</code>. If the motor buzzes without
+turning, swap one pair.</p>
+</div>
+</div>
+</div>
+
+<!-- ==================== PAGE 4 ==================== -->
+<div class="page">
+<h1>Page 4 — Ground, power sequence, pre-flight</h1>
+<p class="sub">The page that prevents most of the debugging.</p>
+
+<div class="cols">
+<div>
+<h2>Ground topology</h2>
+<svg class="d4" viewBox="0 0 520 250" xmlns="http://www.w3.org/2000/svg">
+  <rect x="10" y="200" width="500" height="12" fill="#222" rx="3"/>
+  <text x="10" y="234" font="600 12px sans-serif" font-size="12" font-weight="600">Breadboard ground rail</text>
+  <g font-size="11" font-family="sans-serif">
+    <rect x="10"  y="20" width="88" height="46" fill="#fbfbfb" stroke="#222" stroke-width="2" rx="6"/>
+    <text x="22" y="40">Pi 3B</text><text x="22" y="56" font-size="9" fill="#666">pin 6</text>
+    <rect x="118" y="20" width="88" height="46" fill="#fbfbfb" stroke="#222" stroke-width="2" rx="6"/>
+    <text x="130" y="40">AX58100</text><text x="130" y="56" font-size="9" fill="#666">GND pin 2</text>
+    <rect x="226" y="20" width="88" height="46" fill="#fbfbfb" stroke="#222" stroke-width="2" rx="6"/>
+    <text x="238" y="40">ESP32-S3</text><text x="238" y="56" font-size="9" fill="#666">GND</text>
+    <rect x="334" y="20" width="80" height="46" fill="#fbfbfb" stroke="#222" stroke-width="2" rx="6"/>
+    <text x="346" y="40">5V PSU</text><text x="346" y="56" font-size="9" fill="#666">servo</text>
+    <rect x="426" y="20" width="84" height="46" fill="#fbfbfb" stroke="#222" stroke-width="2" rx="6"/>
+    <text x="438" y="40">12V PSU</text><text x="438" y="56" font-size="9" fill="#666">stepper</text>
+  </g>
+  <g stroke="#222" stroke-width="2.4" fill="none">
+    <path d="M 54,66  V 200"/><path d="M 162,66 V 200"/><path d="M 270,66 V 200"/>
+    <path d="M 374,66 V 200"/><path d="M 468,66 V 200"/>
+  </g>
+</svg>
+<div class="warn">
+<b>This is the wire people forget.</b> The ESP32 is powered from your Mac's USB-C while
+the ESC runs off the Pi. Two supplies with no shared reference means the SPI signals have
+no valid return path, and you read garbage. Symptom: <b>SPI returns all <code>0x00</code>
+or all <code>0xFF</code></b>, while the wiring looks perfectly correct.
+</div>
+<div class="warn">
+<b>Never feed 5 V into the module from two places.</b> It already takes 5 V from Pi pin 4.
+Do not also connect the ESP32's 5 V pin to it.
+</div>
+
+<h2>Bring-up order — one new variable at a time</h2>
+<table>
+<tr><th style="width:46px">Phase</th><th>Milestone</th><th>Pass condition</th></tr>
+<tr><td>4a</td><td>SPI link to ESC</td><td>Reads register <code>0x0000</code> = <code>0xc8</code></td></tr>
+<tr><td>4b</td><td>SOES integrated</td><td><code>set 90</code> → <code>echo=90</code>, slave in OP</td></tr>
+<tr><td>5</td><td>SG90 moves</td><td><code>set 0/90/180</code>, then <code>sweep</code></td></tr>
+<tr><td>6</td><td>NEMA 17 moves</td><td>Same commands drive the stepper</td></tr>
+</table>
+<p class="foot" style="margin-top:2px">Do not wire the motors until 4a passes. Adding a driver,
+a 12 V rail, current tuning and new firmware at once turns one unknown into five.</p>
+</div>
+
+<div>
+<h2>Power-up order</h2>
+<ol>
+<li>Everything off. Pi shut down <i>and unplugged</i> — GPIO pin 4 stays live after
+<code>poweroff</code> while the adapter is in.</li>
+<li>Connect <b>all grounds first</b>.</li>
+<li>Connect signal wires.</li>
+<li>Power the <b>Pi</b> → module LEDs come on, <code>eth0</code> links.</li>
+<li>Power the <b>motor supply</b> (12 V / 5 V).</li>
+<li>Plug the <b>ESP32 USB-C last</b>.</li>
+</ol>
+<p style="margin:2px 0 8px"><b>Power down in reverse</b> — USB-C out first.</p>
+<div class="note">
+The ESP32 goes last because it <b>drives</b> signals into the ESC and the A4988.
+Driving a pin high on an unpowered chip pushes current through its protection diodes —
+that is how boards get damaged before any software is even written.
+</div>
+
+<h2>Pre-flight checks</h2>
+<table>
+<tr><th>Check</th><th>Expected</th></tr>
+<tr><td>Continuity: every GND point to rail</td><td>beeps / ~0 Ω</td></tr>
+<tr><td>Module 5V pin to GND</td><td>≈ 5 V, <b>never</b> shorted</td></tr>
+<tr><td>MISO and MOSI not swapped</td><td>trace both by hand</td></tr>
+<tr><td>100 µF cap polarity</td><td>stripe = negative → GND</td></tr>
+<tr><td>12 V never touches ESP32 or ESC</td><td>A4988 VMOT only</td></tr>
+<tr><td>Coil pairs by resistance</td><td>≈ 4.1 Ω within a pair</td></tr>
+<tr><td><code>Vref</code> set with motor disconnected</td><td>0.80 V (R100)</td></tr>
+</table>
+</div>
+</div>
+
+<p class="foot">Generated for <code>ethercat_proj</code> · source: <code>docs/wiring/wiring-diagram.html</code></p>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,51 @@
+/*
+ * Actuator overlay: SG90 hobby servo (phase 5).
+ *
+ *   west build -b esp32s3_devkitc/esp32s3/procpu firmware \
+ *       -- -DEXTRA_DTC_OVERLAY_FILE=overlays/sg90.overlay
+ *
+ * Signal on GPIO 1 via LEDC PWM. The servo takes 5V from its OWN supply,
+ * never from the board — a stalled SG90 pulls 500-700 mA and will brown
+ * out the ESP32 mid-SPI-transaction. Common ground is mandatory.
+ */
+
+#include <zephyr/dt-bindings/pinctrl/esp32s3-pinctrl.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
+&pinctrl {
+	ledc0_servo: ledc0_servo {
+		group1 {
+			pinmux = <LEDC_CH0_GPIO1>;
+			output-enable;
+		};
+	};
+};
+
+&ledc0 {
+	status = "okay";
+	pinctrl-0 = <&ledc0_servo>;
+	pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel0@0 {
+		reg = <0x0>;
+		timer = <0>;
+	};
+};
+
+/ {
+	servo: servo {
+		compatible = "pwm-servo";
+		/* 50 Hz frame = 20 ms period. 500..2500 us maps 0..180
+		 * degrees — the same formula unit-tested on the master side
+		 * in master/test/test_angle.c. */
+		pwms = <&ledc0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+		min-pulse = <PWM_USEC(500)>;
+		max-pulse = <PWM_USEC(2500)>;
+	};
+
+	aliases {
+		actuator-servo = &servo;
+	};
+};

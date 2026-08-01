@@ -1,0 +1,28 @@
+# PWM-driven servo motor.
+#
+# Zephyr does not ship this binding upstream — it lives inside
+# samples/basic/servo_motor — so the application has to carry its own
+# copy. Kept identical to the in-tree one so the sample code and any
+# upstream documentation apply unchanged.
+
+description: PWM-driven servo motor.
+
+compatible: "pwm-servo"
+
+include: base.yaml
+
+properties:
+  pwms:
+    required: true
+    type: phandle-array
+    description: PWM specifier driving the servo motor.
+
+  min-pulse:
+    required: true
+    type: int
+    description: Minimum pulse width (nanoseconds).
+
+  max-pulse:
+    required: true
+    type: int
+    description: Maximum pulse width (nanoseconds).

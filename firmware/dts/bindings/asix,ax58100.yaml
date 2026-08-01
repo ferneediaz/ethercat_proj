@@ -1,0 +1,24 @@
+# AX58100 EtherCAT Slave Controller, accessed over its PDI-SPI slave port.
+#
+# The ESC is the SPI *slave*; this MCU is the SPI master. PDI-SPI on this
+# module is already enabled in the ESC EEPROM (PDI Control = 0x05, read
+# live over EtherCAT), so no strapping is needed here.
+
+description: AX58100 EtherCAT Slave Controller (PDI-SPI)
+
+compatible: "asix,ax58100"
+
+include: [spi-device.yaml]
+
+properties:
+  irq-gpios:
+    type: phandle-array
+    description: |
+      ASIX SINT. Asserted by the ESC when an AL event needs servicing.
+      Active low, open drain on the module, so enable a pull-up.
+
+  sync0-gpios:
+    type: phandle-array
+    description: |
+      Distributed-clock SYNC0 output from the ESC. Not required to reach
+      OP; wire it now so DC-synchronised motion is possible later.

@@ -1,0 +1,4 @@
+# Vendor prefixes used by this application's local bindings.
+# Without this, the devicetree build warns:
+#   compatible 'asix,ax58100' has unknown vendor prefix 'asix'
+asix	ASIX Electronics Corporation

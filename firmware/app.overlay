@@ -1,0 +1,80 @@
+/*
+ * AX58100 EtherCAT Slave Controller on the ESP32-S3's FSPI (SPI2).
+ *
+ * GPIO 10-13 are the ESP32-S3 FSPI IOMUX pins, so the SPI runs at full
+ * speed with no GPIO-matrix routing penalty.
+ *
+ * Wiring is documented in docs/wiring/wiring-diagram.pdf (page 2).
+ */
+
+#include <zephyr/dt-bindings/pinctrl/esp32s3-pinctrl.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/*
+ * Console over the ESP32-S3's built-in USB-Serial-JTAG peripheral.
+ *
+ * REQUIRED on the T-Display-S3. The esp32s3_devkitc board puts the
+ * console on uart0 (GPIO 43/44) and disables usb_serial, because the
+ * DevKitC has a USB-to-UART bridge chip on those pins. The T-Display-S3
+ * has no such chip — its USB-C goes straight to the SoC's native USB
+ * (GPIO 19/20). Without this override you get no console output at all.
+ */
+/ {
+	chosen {
+		zephyr,console = &usb_serial;
+		zephyr,shell-uart = &usb_serial;
+	};
+};
+
+&usb_serial {
+	status = "okay";
+};
+
+&pinctrl {
+	spim2_ethercat: spim2_ethercat {
+		group1 {
+			pinmux = <SPIM2_SCLK_GPIO12>,
+				 <SPIM2_MISO_GPIO13>;
+		};
+		group2 {
+			pinmux = <SPIM2_MOSI_GPIO11>;
+			output-low;
+		};
+	};
+};
+
+&spi2 {
+	status = "okay";
+	pinctrl-0 = <&spim2_ethercat>;
+	pinctrl-names = "default";
+
+	/*
+	 * Chip select is driven as a plain GPIO, not hardware CS: the ESC
+	 * needs SCS_ESC held low across a whole multi-byte transaction
+	 * (address, command, wait state, data), and hardware CS on many
+	 * controllers toggles per byte.
+	 */
+	cs-gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
+
+	esc: ax58100@0 {
+		compatible = "asix,ax58100";
+		reg = <0>;
+		status = "okay";
+
+		/*
+		 * SPI mode 3 (CPOL=1, CPHA=1) and active-low chip select
+		 * are not assumptions — they were read out of the live
+		 * silicon via PDI Config register 0x0150 = 0x03 using
+		 * `servo_master eth0 regs` on the Pi.
+		 *
+		 * Start at 1 MHz. The ESC tolerates up to ~47 MHz; slow
+		 * first makes a scope trace easy to read if this fails.
+		 */
+		spi-max-frequency = <1000000>;
+		spi-cpol;
+		spi-cpha;
+
+		irq-gpios   = <&gpio0 16 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		sync0-gpios = <&gpio0 21 GPIO_ACTIVE_HIGH>;
+	};
+};

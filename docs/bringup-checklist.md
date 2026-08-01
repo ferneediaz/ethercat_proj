@@ -283,16 +283,28 @@ serial console instead.
       output and echoes back (`echo=90` in the master's status line).
       **MILESTONE 2** — data flows Pi → ESC → SPI → ESP32 → back.
 
-## Phase 5 — Servo motion (needs: SG90, separate 5V supply)
+## Phase 5 — Servo motion (needs: SG90, 5V supply)
 
-- [ ] SG90 orange (signal) → a free ESP32-S3 GPIO driven by LEDC PWM
-      (GPIO 1 or 2 are unused and suitable).
-- [ ] SG90 red (5V) → its **own** 5V supply, never the board's 3V3 pin
-      (a stalled SG90 draws 500–700 mA and browns out the board).
-- [ ] SG90 brown (GND) → common ground with the ESP32 and servo supply.
-- [ ] Firmware maps angle → pulse width: `0.5 + angle/180 * 2.0` ms at
-      50 Hz (this exact formula is unit-tested in `master/test/test_angle.c`).
-- [ ] `sudo servo_master eth0 set 0` / `90` / `180` → servo hits each end.
+**MILESTONE 5a PASSED 2026-08-02** — servo sweeps end to end under local
+control, driven by `servo_demo()` in `firmware/src/main.c`. Build with
+`./scripts/fw.sh build sg90`.
+
+- [x] SG90 orange (signal) → ESP32-S3 **GPIO 1**, LEDC PWM channel 0.
+- [x] SG90 red (5V) → Raspberry Pi header **pin 2**. Interim supply: the
+      dedicated DC5V2A adapter (Jin-Hua ref 11396) is not bought yet. The
+      Pi rail has held up fine unloaded — the ESC keeps reading 0xc8 in the
+      heartbeat while the servo sweeps, which is what would fail first if
+      the servo were dragging the rail down. Revisit if the servo is ever
+      loaded, since a stalled SG90 pulls 500-700 mA.
+- [x] SG90 brown (GND) → common ground with the ESP32 and the Pi.
+- [x] Firmware maps angle → pulse width, 500..2500 us at 50 Hz, in integer
+      arithmetic matching `angle_to_pulse_ms()` in `master/src/angle.c` so
+      both ends agree on what a degree means.
+
+Remaining, and blocked on SOES (phase 4b) — the angle has to arrive over
+EtherCAT before the master can command it:
+
+- [ ] `sudo servo_master eth0 set 0` / `90` / `180` → servo hits each angle.
 - [ ] `sudo servo_master eth0 sweep` → servo sweeps continuously.
       **MILESTONE 3** — full chain works. Record a video.
 

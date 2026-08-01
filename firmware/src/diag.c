@@ -165,6 +165,54 @@ static void bias_sweep(void)
 	}
 }
 
+/*
+ * Pad-to-pad test: is a specific pad or wire bad?
+ *
+ * Grounding a pin through a jumper conflates three things — the wire, the
+ * pin's pad, and whether the ground it reaches is the same node the ESP32
+ * sits on. Driving one ESP32 pad and reading another removes the last of
+ * those entirely: both ends are on this board, referenced to this board's
+ * own ground, with only the jumper in between.
+ *
+ * Wire GPIO 16 to GPIO 21 for this. Both are known-good SoC pins — 21 read
+ * the ESC's SYNC0 correctly for a long stretch, and 16 is otherwise idle.
+ */
+static void pad_to_pad_test(void)
+{
+	const struct device *gpio0 = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+	static const int levels[] = {0, 1, 0, 1};
+	int bad = 0;
+
+	LOG_INF("--- pad-to-pad: wire GPIO 16 to GPIO 21 ---");
+
+	claim_pin_as_gpio(gpio0, PIN_IRQ);
+	claim_pin_as_gpio(gpio0, 21);
+	gpio_pin_configure(gpio0, PIN_IRQ, GPIO_OUTPUT_HIGH);
+	gpio_pin_configure(gpio0, 21, GPIO_INPUT | GPIO_PULL_UP);
+
+	for (size_t i = 0; i < ARRAY_SIZE(levels); i++) {
+		gpio_pin_set(gpio0, PIN_IRQ, levels[i]);
+		k_sleep(K_MSEC(5));
+		int got = gpio_pin_get(gpio0, 21);
+
+		LOG_INF("  drove GPIO 16 = %d, GPIO 21 reads %d  %s", levels[i],
+			got, got == levels[i] ? "ok" : "MISMATCH");
+		if (got != levels[i]) {
+			bad++;
+		}
+	}
+
+	if (bad == 0) {
+		LOG_INF("PAD-TO-PAD PASS — both pads and the jumper are good. Any "
+			"remaining failure is the ground between boards, or the "
+			"module end of a wire.");
+	} else {
+		LOG_ERR("PAD-TO-PAD FAIL — with both ends on this board and no "
+			"ground involved, either that jumper is dead or one of "
+			"these two pads is not making contact.");
+	}
+}
+
 static void pin_monitor(void)
 {
 	const struct device *gpio0 = DEVICE_DT_GET(DT_NODELABEL(gpio0));
@@ -204,6 +252,7 @@ void esc_diag_run(void)
 	 * ESC inputs: a pull-up on the ESP32 side reads high whether or not
 	 * the wire carries. It works by watching the ESC's own reaction. */
 	bias_sweep();
+	pad_to_pad_test();
 	nss_wire_test();
 
 	/* Runs last and never returns — leaves a live view of every line so

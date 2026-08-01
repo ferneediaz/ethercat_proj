@@ -105,6 +105,18 @@ int main(void)
 	 * PDI access is meaningful. */
 	k_sleep(K_MSEC(100));
 
+	/*
+	 * Discard one read before checking anything.
+	 *
+	 * The first PDI-SPI access after reset returns 0xff on this hardware
+	 * even when every later read is correct — the ESC is still settling
+	 * and has not driven MISO yet. Without this, register 0x0000 fails
+	 * while 0x0140/0x0141/0x0150 all pass, which looks like a wiring
+	 * fault on one line rather than a timing artifact on the first
+	 * transaction.
+	 */
+	(void)esc_read8(ESC_REG_TYPE);
+
 	int failures = run_checks();
 
 	if (failures == 0) {

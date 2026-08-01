@@ -1,0 +1,205 @@
+===============================================================
+  SHOPPING LIST - 今華電子 (Jin-Hua Electronics)
+  台北市中正區新生南路一段12巷2號  /  02-2392-1111
+  09:00 - 21:30
+===============================================================
+
+
+---------------------------------------------------------------
+  PART 1 / 第一部分 : ENGLISH
+---------------------------------------------------------------
+
+WHAT I AM BUILDING
+------------------
+A self-study EtherCAT industrial-fieldbus project.
+
+  Raspberry Pi  ->  EtherCAT cable  ->  AX58100 slave chip
+                ->  SPI  ->  ESP32-S3  ->  motor
+
+The Raspberry Pi is the EtherCAT master. It sends an angle value
+every 10 ms. The AX58100 receives it and passes it over SPI to an
+ESP32-S3, which drives the motor to that angle.
+
+The servo part already works. I am now adding a NEMA 17 stepper
+motor, so I need the motor, a driver, a 12 V supply and a few
+small parts.
+
+
+ITEMS
+-----
+
+ #  QTY  ITEM                                    PRICE   REF No.
+--- ---- --------------------------------------- ------- --------
+ 1   1   NEMA17 / 42-type stepper motor          NT$360   40660
+         model 17HS4023
+         -> the motor itself
+
+ 2   2   A4988 stepper driver module             NT$65    23512
+         (with heatsink)                         each
+         -> converts step/direction pulses into
+            motor coil current.
+            Buying 2: one is a spare, these are
+            easy to destroy.
+
+ 3   1   DRV8825/A4988 driver expansion board    NT$60    39222
+         -> carrier board for item 2. Gives
+            screw terminals, DIP microstep
+            switches and a JST XHP-4 motor
+            connector.
+            NOTE: this board does NOT include
+            the driver module - that is item 2.
+
+ 4   1   100uF 35V electrolytic capacitor        NT$20     7207
+         (pack of 10)
+         -> goes across VMOT and GND on the
+            driver board. Without it, voltage
+            spikes from the motor coils destroy
+            the A4988 on first power-up.
+
+ 5   1   DC 12V 2A power adapter                 NT$320   11352
+         -> powers the stepper motor.
+         *** ASK: can this be supplied with a
+             5.5 x 2.5 mm DC plug instead of
+             5.5 x 2.1 mm? (see item 7) ***
+
+ 6   1   DC 5V 2A power adapter                  NT$180   11396
+         -> powers the SG90 servo on its own
+            supply, so a stalled servo cannot
+            brown out the microcontroller.
+         *** SAME PLUG QUESTION AS ITEM 5 ***
+
+ 7   1   2.5mm DC socket to screw terminal       NT$20     5358
+         solderless (pack of 2)
+         -> lets the power adapter connect to
+            the breadboard without cutting the
+            cable.
+         *** MUST MATCH THE ADAPTER PLUG SIZE.
+             Please let me test-fit them in the
+             shop before I pay. ***
+
+ 8   1   Dupont jumper wires, female-to-male     ~NT$50   28984
+         20 pin, 20 cm
+         -> wiring between boards.
+
+ 9   1   Multimeter (basic digital)              ~NT$300     -
+         -> required to set the A4988 current
+            limit, and to identify the motor
+            coil pairs by resistance.
+            (If you do not have one, I will try
+             祥昌電子 in the electronics plaza.)
+
+                                    APPROX TOTAL  NT$1,160
+
+
+QUESTIONS TO ASK
+----------------
+ A. Is the 17HS4023 stepper motor in stock today?
+ B. Does the motor come with a JST-XH connector cable?
+    If not, I need one to reach the expansion board.
+ C. Can the 12V and 5V adapters be fitted with 5.5 x 2.5 mm
+    plugs, to match item 7?
+ D. Do you sell a basic multimeter?
+
+
+---------------------------------------------------------------
+  PART 2 / 第二部分 : 中文
+---------------------------------------------------------------
+
+我在做什麼
+----------
+這是一個自學的 EtherCAT 工業通訊專案。
+
+  樹莓派  ->  EtherCAT 網路線  ->  AX58100 從站晶片
+          ->  SPI  ->  ESP32-S3  ->  馬達
+
+樹莓派是 EtherCAT 主站，每 10 毫秒送出一個角度值。
+AX58100 收到後透過 SPI 傳給 ESP32-S3，再由它驅動馬達
+轉到指定角度。
+
+伺服馬達的部分已經會動了。現在要加上 NEMA 17 步進馬達，
+所以需要馬達、驅動器、12V 電源和一些小零件。
+
+
+購買清單
+--------
+
+ 編號 數量  品名                                 單價     貨號
+ ---- ----  ----------------------------------- -------- -------
+  1    1   NEMA17/42型 步進馬達 17HS4023          NT$360   40660
+           → 馬達本體
+
+  2    2   A4988 步進馬達驅動器 (含散熱片)         NT$65    23512
+           → 把 step/direction 脈波轉成馬達線圈
+             電流。買兩個是因為這個很容易燒掉，
+             需要備品。
+
+  3    1   DRV8825/A4988 步進馬達驅動擴展板       NT$60    39222
+           → 第 2 項的載板，提供端子台、微步進
+             DIP 開關和 JST XHP-4 馬達接頭。
+             注意：這塊板子「不含」驅動模組，
+             驅動模組是第 2 項。
+
+  4    1   [10只裝] 100u 35V 電解電容             NT$20     7207
+           → 接在驅動板的 VMOT 和 GND 之間。
+             沒有它的話，馬達線圈的突波會在第一
+             次通電時就把 A4988 燒掉。
+
+  5    1   DC12V2A 交換式整流穩壓變壓器           NT$320   11352
+           → 給步進馬達供電。
+           ★請問：可以換成 5.5 x 2.5mm 的
+             DC 接頭嗎？(配合第 7 項)
+
+  6    1   DC5V2A 交換式整流穩壓變壓器            NT$180   11396
+           → 給 SG90 伺服馬達單獨供電，避免馬達
+             堵轉時把微控制器拉垮。
+           ★同上，接頭尺寸問題
+
+  7    1   [2只裝] 2.5mm 母-端子座接口(免焊接)     NT$20     5358
+           → 讓變壓器不用剪線就能接到麵包板。
+           ★尺寸必須和變壓器接頭吻合，
+             想在店裡先試插看看再結帳。
+
+  8    1   公-母頭 20PIN 彩虹杜邦線 20cm          約NT$50  28984
+           → 板子之間的接線
+
+  9    1   三用電表 (基本型數位)                   約NT$300    -
+           → 設定 A4988 的限流 (Vref)，以及用電阻
+             值判斷馬達的線圈配對。
+             (如果沒有的話，我再去祥昌電子看看)
+
+                                       合計約  NT$1,160
+
+
+想請教的問題
+------------
+ A. 17HS4023 步進馬達今天有現貨嗎？
+ B. 馬達有附 JST-XH 連接線嗎？
+    沒有的話我需要買一條接到擴展板。
+ C. 12V 和 5V 變壓器可以換成 5.5 x 2.5mm 接頭嗎？
+    (要配合第 7 項)
+ D. 有賣基本的三用電表嗎？
+
+
+===============================================================
+ Notes to self / 給自己的提醒
+---------------------------------------------------------------
+ * Item 3 is only the carrier board. Item 2 is the actual driver.
+   第 3 項只是載板，第 2 項才是驅動器本體。
+
+ * Install the A4988 the right way round or it dies instantly.
+   A4988 方向裝反會馬上燒毀 - 對準 EN 腳位絲印。
+
+ * Fit the capacitor BEFORE the first power-up.
+   第一次通電前一定要先裝好電容。
+
+ * Never unplug the motor while 12V is on.
+   12V 通電時絕對不要拔馬達接頭。
+
+ * Set Vref with the motor DISCONNECTED.
+   調 Vref 時馬達要「拔掉」。
+   R100 (0.1 ohm) -> Vref = 0.80 V for 1.0 A
+   R050 (0.05 ohm) -> Vref = 0.40 V for 1.0 A
+
+ * Call 02-2392-1111 first to confirm the motor is in stock.
+   去之前先打 02-2392-1111 確認馬達有現貨。
+===============================================================

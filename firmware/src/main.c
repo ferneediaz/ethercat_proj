@@ -11,6 +11,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "ecat_slave.h"
 #include "esc.h"
 #include "servo.h"
 
@@ -127,6 +128,15 @@ static void servo_demo(void)
 	}
 }
 
+/* Adapter: the actuator API returns an error code, the slave callback does
+ * not. A failed PWM write is already logged by servo.c, and there is nothing
+ * useful the state machine could do about it mid-cycle — dropping to SAFEOP
+ * because one frame's pulse did not take would be worse than holding. */
+static void apply_servo_angle(uint16_t degrees)
+{
+	(void)servo_set_angle(degrees);
+}
+
 int main(void)
 {
 	LOG_INF("EtherCAT servo node — ESP32-S3 host, milestone 4a");
@@ -175,30 +185,46 @@ int main(void)
 		hint_on_total_failure();
 	}
 
-	/*
-	 * MILESTONE 5a — the servo moves under its own steam.
-	 *
-	 * SOES is not integrated yet, so there is no PDO to follow. Sweeping
-	 * from a local counter proves the PWM channel, the wiring and the
-	 * servo's power supply independently, which is worth separating: when
-	 * the angle later arrives over EtherCAT and nothing moves, this
-	 * milestone is what tells us the mechanical half was already good.
-	 */
-	if (servo_present()) {
-		if (servo_init() == 0) {
+	if (IS_ENABLED(CONFIG_SERVO_LOCAL_SWEEP)) {
+		/*
+		 * MILESTONE 5a — the actuator moves under its own steam, with
+		 * the bus ignored entirely. Diagnostic only: it separates a
+		 * broken actuator from a broken slave stack.
+		 */
+		if (servo_present() && servo_init() == 0) {
 			servo_demo();
 		}
+		LOG_ERR("CONFIG_SERVO_LOCAL_SWEEP set but no actuator present.");
 		return 0;
 	}
 
-	/* Keep re-reading so the link can be watched live while wiring is
-	 * poked at — a loose jumper shows up immediately. */
-	while (1) {
-		k_sleep(K_SECONDS(5));
-		int type = esc_read8(ESC_REG_TYPE);
+	/*
+	 * MILESTONE 4b — run as an EtherCAT slave.
+	 *
+	 * The angle now arrives as process data instead of a local counter.
+	 * Polling is fast and unconditional: the master decides the cycle
+	 * time, and the working counter it checks only increments when we
+	 * have actually read the outputs and written the inputs.
+	 */
+	if (servo_present()) {
+		servo_init();
+	}
+	if (ecat_slave_init(servo_present() ? apply_servo_angle : NULL) != 0) {
+		return 0;
+	}
 
-		LOG_INF("heartbeat: Type=0x%02x AL Status=0x%02x", type,
-			esc_read8(ESC_REG_AL_STATUS));
+	uint8_t last_logged = 0xff;
+
+	while (1) {
+		ecat_slave_poll();
+
+		uint8_t st = ecat_slave_state();
+
+		if (st != last_logged) {
+			LOG_INF("AL state: %s", ecat_state_name(st));
+			last_logged = st;
+		}
+		k_sleep(K_MSEC(1));
 	}
 	return 0;
 }

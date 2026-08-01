@@ -39,6 +39,40 @@
 #define ESC_AL_ERROR_ACK 0x10u /* set by the master to clear an error */
 #define ESC_AL_STATE_MASK 0x0fu
 
+/*
+ * SyncManagers. Eight bytes of configuration each, starting at 0x0800:
+ *
+ *   +0  physical start address in the ESC's DPRAM (16 bit)
+ *   +2  length in bytes (16 bit)
+ *   +4  control (buffer type, direction)
+ *   +5  status
+ *   +6  activate (bit 0 enables the SyncManager)
+ *   +7  PDI control
+ *
+ * The master programs these from the EEPROM's description of the slave on
+ * the PREOP->SAFEOP transition. The slave reads them back to learn where in
+ * DPRAM its process data actually lives — those addresses are not fixed and
+ * must never be hardcoded.
+ *
+ * SM0/SM1 are the mailbox pair; SM2 carries outputs (master -> slave) and
+ * SM3 inputs (slave -> master).
+ */
+#define ESC_SM_BASE 0x0800u
+#define ESC_SM_REG(n, off) (ESC_SM_BASE + (uint16_t)((n) * 8u) + (off))
+#define ESC_SM_PHYS_ADDR 0u
+#define ESC_SM_LENGTH 2u
+#define ESC_SM_CONTROL 4u
+#define ESC_SM_STATUS 5u
+#define ESC_SM_ACTIVATE 6u
+
+#define ESC_SM_OUTPUTS 2u
+#define ESC_SM_INPUTS 3u
+
+/* AL Status Code values we can return, from ETG.1000.6 Table 12. */
+#define ESC_ALSC_NO_ERROR 0x0000u
+#define ESC_ALSC_INVALID_OUTPUT_CFG 0x001du
+#define ESC_ALSC_INVALID_INPUT_CFG 0x001eu
+
 /* Bind to the devicetree node and configure the SPI bus.
  * Returns 0 on success, negative errno otherwise. */
 int esc_init(void);

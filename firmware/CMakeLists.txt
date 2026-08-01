@@ -11,4 +11,5 @@ target_sources(app PRIVATE
   src/esc.c
   src/diag.c
   src/servo.c
+  src/ecat_slave.c
 )

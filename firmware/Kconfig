@@ -12,3 +12,15 @@ config ESC_DIAG
 	  pull-up cannot tell a carrying wire from a dead one, and this is the
 	  only way to see them. Ends in a live monitor of every SPI line so
 	  wiring can be poked at without reflashing.
+
+config SERVO_LOCAL_SWEEP
+	bool "Sweep the servo locally instead of following EtherCAT"
+	default n
+	help
+	  Milestone 5a behaviour: ignore the bus and sweep the actuator from a
+	  local counter. Proves the PWM channel, the actuator wiring and its
+	  power supply on their own, so that if the angle later arrives over
+	  EtherCAT and nothing moves, the mechanical half is already ruled out.
+
+	  Leave this off for normal operation, where the angle comes from the
+	  master as process data.

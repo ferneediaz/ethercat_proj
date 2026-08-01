@@ -1,15 +1,14 @@
 source "Kconfig.zephyr"
 
-config ESC_SPI_LOOPBACK_TEST
-	bool "Run the SPI loopback self-test instead of talking to the ESC"
+config ESC_DIAG
+	bool "Run link diagnostics instead of the milestone 4a register check"
 	default n
 	help
-	  Diagnostic build. Clocks a known byte pattern out of MOSI and
-	  verifies it arrives back on MISO, which requires those two lines to
-	  be physically joined (pull the MOSI and MISO leads off P1 pins 7 and
-	  6 and connect them to each other).
+	  Diagnostic build, used in place of the milestone 4a register check
+	  when the ESC does not answer over SPI.
 
-	  Use this when every ESC register reads 0xff. A pass proves the ESP32
-	  SPI peripheral, the pin mapping and both jumper wires are good, which
-	  narrows the fault to NSS, SCK or the module. Never leave this enabled
-	  for a normal build — the ESC is not addressed at all.
+	  Tests the NSS wire by asserting chip select and watching for the
+	  ESC's reaction on IRQ and MISO — NSS and SCK are ESC inputs, so a
+	  pull-up cannot tell a carrying wire from a dead one, and this is the
+	  only way to see them. Ends in a live monitor of every SPI line so
+	  wiring can be poked at without reflashing.

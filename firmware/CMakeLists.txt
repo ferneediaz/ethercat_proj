@@ -9,5 +9,5 @@ project(ethercat_servo_node)
 target_sources(app PRIVATE
   src/main.c
   src/esc.c
-  src/loopback.c
+  src/diag.c
 )

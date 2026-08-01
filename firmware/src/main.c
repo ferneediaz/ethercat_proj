@@ -87,9 +87,9 @@ int main(void)
 		return 0;
 	}
 
-	if (IS_ENABLED(CONFIG_ESC_SPI_LOOPBACK_TEST)) {
-		/* Diagnostic build: the ESC is deliberately not addressed. */
-		esc_spi_loopback_test();
+	if (IS_ENABLED(CONFIG_ESC_DIAG)) {
+		/* Diagnostic build: never returns, ends in the live pin monitor. */
+		esc_diag_run();
 		return 0;
 	}
 

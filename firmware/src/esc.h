@@ -38,10 +38,10 @@ int esc_write(uint16_t adr, const void *buf, size_t len);
  * otherwise the byte value in 0..255. */
 int esc_read8(uint16_t adr);
 
-/* Diagnostic: clock a known pattern out of MOSI and check it arrives back
- * on MISO. Requires those two lines to be physically joined. Used to tell an
- * ESP32-side fault apart from a module-side one when every ESC register
- * reads 0xff. See loopback.c. */
-void esc_spi_loopback_test(void);
+/* Diagnostic build only: test the NSS wire by watching the ESC react, then
+ * leave a live monitor of every SPI line running. NSS and SCK are ESC
+ * inputs, so this is the only way to tell a carrying wire from a dead one.
+ * See diag.c. */
+void esc_diag_run(void);
 
 #endif /* ESC_H */

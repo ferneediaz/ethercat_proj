@@ -1,5 +1,32 @@
 # Pi Facts
 
+## Reaching the Pi
+
+- **IP: `192.168.0.133`** (WiFi, `wlan0`, DHCP from 192.168.0.1)
+- `raspberrypi.local` works only while mDNS does, and it failed repeatedly on
+  2026-08-01 while the Pi was perfectly reachable by IP. Prefer the address:
+  `PI_HOST=192.168.0.133 scripts/deploy.sh`
+- `eth0` is reserved for EtherCAT and has no IPv4 address. Plugging it into a
+  router or straight into the Mac is a useful rescue path when WiFi is down —
+  the Pi is then reachable over IPv6 link-local via `raspberrypi.local` — but
+  the EtherCAT bus cannot run at the same time.
+
+## WiFi
+
+The Imager-written credentials were lost on 2026-08-01 after several hard
+power cuts: `/etc/NetworkManager/system-connections/` was left empty and the
+next boot logged `EXT4-fs: orphan cleanup`, the signature of an unclean
+shutdown. The card itself is fine (filesystem clean, no media errors).
+
+Reconnect with, substituting the real password:
+
+    sudo nmcli device wifi connect "<SSID>" password "<PASSWORD>"
+
+This writes a profile with autoconnect enabled, so it survives reboots.
+
+**Shut down with `sudo poweroff`, not by pulling power.** That is what cost
+the WiFi configuration, and next time it could cost the SOEM build.
+
 ## Flashing settings (use these exact values)
 
 Chosen so `scripts/deploy.sh` works with no environment variables — its

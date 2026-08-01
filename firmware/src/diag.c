@@ -96,6 +96,53 @@ static const struct {
 	{PIN_MISO, "MISO -> P1.6"}, {PIN_IRQ, "IRQ -> P1.8"}, {21, "SYNC0-> P1.3"},
 };
 
+/*
+ * Bias sweep: tell "nothing attached" apart from "held low".
+ *
+ * The monitor holds every pin high with an internal pull-up, so a 0 is read
+ * as "something is grounding this". That inference fails if the pull-up
+ * itself did not take effect, and the two cases look identical from one
+ * sample. Reading each pin under a pull-up and then a pull-down separates
+ * them, because only a floating pin follows the bias:
+ *
+ *   up=1 down=0  -> floating, nothing attached
+ *   up=0 down=0  -> genuinely held low by something external
+ *   up=1 down=1  -> held high by something external
+ */
+static void bias_sweep(void)
+{
+	const struct device *gpio0 = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+
+	LOG_INF("--- bias sweep: floating vs driven ---");
+
+	for (size_t i = 0; i < ARRAY_SIZE(monitored); i++) {
+		uint8_t pin = monitored[i].pin;
+
+		gpio_pin_configure(gpio0, pin, GPIO_INPUT | GPIO_PULL_UP);
+		k_sleep(K_MSEC(5));
+		int up = gpio_pin_get(gpio0, pin);
+
+		gpio_pin_configure(gpio0, pin, GPIO_INPUT | GPIO_PULL_DOWN);
+		k_sleep(K_MSEC(5));
+		int down = gpio_pin_get(gpio0, pin);
+
+		const char *verdict;
+
+		if (up == 1 && down == 0) {
+			verdict = "floating (nothing attached)";
+		} else if (up == 0 && down == 0) {
+			verdict = "HELD LOW externally";
+		} else if (up == 1 && down == 1) {
+			verdict = "HELD HIGH externally";
+		} else {
+			verdict = "inverted - unexpected";
+		}
+
+		LOG_INF("  GPIO %-2u %-14s up=%d down=%d  %s", pin,
+			monitored[i].role, up, down, verdict);
+	}
+}
+
 static void pin_monitor(void)
 {
 	const struct device *gpio0 = DEVICE_DT_GET(DT_NODELABEL(gpio0));
@@ -133,6 +180,7 @@ void esc_diag_run(void)
 	/* Stage 1 is the only test that can see NSS and SCK, because they are
 	 * ESC inputs: a pull-up on the ESP32 side reads high whether or not
 	 * the wire carries. It works by watching the ESC's own reaction. */
+	bias_sweep();
 	nss_wire_test();
 
 	/* Runs last and never returns — leaves a live view of every line so

@@ -20,8 +20,24 @@
 #define ESC_REG_PDI_CONTROL 0x0140u/* expect 0x05 (SPI slave) */
 #define ESC_REG_ESC_CONFIG 0x0141u /* expect 0x0e (device emulation off) */
 #define ESC_REG_PDI_CONFIG 0x0150u /* expect 0x03 (mode 3, CS active low) */
-#define ESC_REG_AL_CONTROL 0x0130u
-#define ESC_REG_AL_STATUS 0x0134u
+/* AL state machine. Addresses per AX58100 datasheet v105 register map
+ * (and ETG.1000): AL Control is what the master requests, AL Status is
+ * what the slave reports back, AL Status Code carries the reason for a
+ * refusal. These three were previously shifted by one slot here, which
+ * made a correct "AL Status = 0x01 (INIT)" read look like an AL Control
+ * value and hid the master's actual request completely. */
+#define ESC_REG_AL_CONTROL 0x0120u     /* master writes the requested state */
+#define ESC_REG_AL_STATUS 0x0130u      /* slave writes the achieved state */
+#define ESC_REG_AL_STATUS_CODE 0x0134u /* slave writes the refusal reason */
+
+/* AL states, low nibble of AL Control / AL Status. */
+#define ESC_AL_INIT 0x01u
+#define ESC_AL_PREOP 0x02u
+#define ESC_AL_BOOT 0x03u
+#define ESC_AL_SAFEOP 0x04u
+#define ESC_AL_OP 0x08u
+#define ESC_AL_ERROR_ACK 0x10u /* set by the master to clear an error */
+#define ESC_AL_STATE_MASK 0x0fu
 
 /* Bind to the devicetree node and configure the SPI bus.
  * Returns 0 on success, negative errno otherwise. */

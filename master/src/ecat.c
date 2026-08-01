@@ -103,8 +103,8 @@ void ecat_dump_regs(void)
    ec_FPRD(adr, 0x0140, sizeof(pdi), &pdi, EC_TIMEOUTRET);
    ec_FPRD(adr, 0x0141, sizeof(esc_cfg), &esc_cfg, EC_TIMEOUTRET);
    ec_FPRD(adr, 0x0150, sizeof(pdi_cfg), &pdi_cfg, EC_TIMEOUTRET);
-   ec_FPRD(adr, 0x0130, sizeof(al_ctrl), &al_ctrl, EC_TIMEOUTRET);
-   ec_FPRD(adr, 0x0134, sizeof(al_stat), &al_stat, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0120, sizeof(al_ctrl), &al_ctrl, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0130, sizeof(al_stat), &al_stat, EC_TIMEOUTRET);
 
    printf("ESC registers (slave 1 @ 0x%4.4x)\n", adr);
    printf("  0x0000 Type              0x%2.2x\n", type);
@@ -125,8 +125,8 @@ void ecat_dump_regs(void)
    {
       printf("  0x0150 PDI Config       0x%2.2x\n", pdi_cfg);
    }
-   printf("  0x0130 AL Control        0x%4.4x\n", al_ctrl);
-   printf("  0x0134 AL Status         0x%4.4x\n", al_stat);
+   printf("  0x0120 AL Control        0x%4.4x\n", al_ctrl);
+   printf("  0x0130 AL Status         0x%4.4x\n", al_stat);
 
    printf("\n");
    if (pdi == 0x05)

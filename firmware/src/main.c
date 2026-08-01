@@ -29,7 +29,7 @@ static const struct reg_check checks[] = {
 	{"PDI Control", ESC_REG_PDI_CONTROL, 0x05, true},
 	{"ESC Config", ESC_REG_ESC_CONFIG, 0x0e, true},
 	{"PDI Config", ESC_REG_PDI_CONFIG, 0x03, true},
-	{"AL Status", ESC_REG_AL_STATUS, 0x00, false},
+	{"AL Status", ESC_REG_AL_STATUS, ESC_AL_INIT, true},
 };
 
 static int run_checks(void)

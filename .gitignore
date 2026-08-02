@@ -4,3 +4,9 @@ build*/
 test_angle
 .DS_Store
 .cache/
+
+# Presentation write-up of the project, kept local rather than committed.
+# It is a rendered artifact rather than source: a single ~220 KB HTML file
+# that duplicates what docs/bringup-checklist.md and the code comments
+# already record, and it would need updating on every hardware change.
+docs/project-explainer.html

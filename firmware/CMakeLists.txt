@@ -50,4 +50,5 @@ target_sources(app PRIVATE
   src/diag.c
   src/servo.c
   src/ecat_slave.c
+  src/sync0.c
 )

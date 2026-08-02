@@ -203,7 +203,7 @@ them gives full-speed SPI with no GPIO-matrix routing penalty:
 | `MISO` | **GPIO 13** (FSPIQ) | module → MCU |
 | `NSS` | **GPIO 10** (FSPICS0) | chip select, **active low** |
 | `IRQ` | **GPIO 16** | ASIX `SINT`, edge interrupt |
-| `SYNC0` | **GPIO 21** | distributed-clock tick, edge interrupt |
+| `SYNC0` | **GPIO 2** | distributed-clock tick, edge interrupt. **Not GPIO 21** — see phase 7 |
 | `SYNC1` | — | leave unconnected initially |
 | `LOAD` | — | ASIX `EEP_DONE`; verify meaning later |
 
@@ -315,6 +315,74 @@ the SG90 from pin 2 simultaneously, with `vcgencmd get_throttled` polled
 every 3 s throughout the sweep. It stayed `0x0` — no undervoltage, no resets.
 The dedicated DC5V2A adapter (Jin-Hua ref 11396) is therefore still optional
 for an unloaded servo, and only becomes necessary under mechanical load.
+
+## Phase 7 — Distributed-clock synchronisation (PASSED 2026-08-02)
+
+**MILESTONE 7 PASSED.** The slave runs one cycle per SYNC0 edge, locked to
+the bus clock, through a full sweep with `wkc 3/3` and `low_wkc 0`.
+
+Measured: 201 edges per 2 s against an expected 200 (10 ms cycle = 100 Hz),
+sustained. Master phase error converged 1,134,440 ns -> ~45,000 ns and held,
+peak excursion 278,200 ns — that peak is Linux scheduling jitter on a
+non-PREEMPT_RT kernel, and is the honest limit of this setup.
+
+What changed:
+
+- **Master** (`master/src/ecat.c`): `ecat_to_op()` now calls
+  `ec_dcsync0(1, TRUE, 10 ms, 2 ms shift)` after SAFEOP and before requesting
+  OP, so the first OP cycle is already DC-paced. `ecat_dc_correction()` is a
+  PI controller (SOEM's `red_test.c` constants) that phase-locks the master's
+  `clock_nanosleep` deadline to `ec_DCtime`. Without it the master's cycle
+  and SYNC0 drift relative to each other, which is worse than no DC at all.
+- **Master** (`master/src/main.c`): the status line gains
+  `dc=<phase error>ns peak=<worst since settling>ns`.
+- **Slave** (`firmware/src/sync0.c`, new): edge interrupt on GPIO 2.
+  `sync0_pace()` polls at 1 ms until 3 edges have been seen, then blocks on
+  edges with a 25 ms timeout, and reverts to polling if they stop. Both the
+  SOES loop and the minimal-slave loop call it.
+- `CONFIG_ESC_DC_SYNC` (default y) and `SERVO_DC=0` on the master turn it off,
+  so the two modes can be compared back to back.
+
+### Register 0x0151 — checked, and fine
+
+The worry was that `0x0151` bit 2 (SYNC0 output vs LATCH0 input) is
+EEPROM-loaded and we never write the EEPROM. Resolved: it reads **`0x44`**,
+SYNC0 is a push-pull active-high output. Nothing about this module prevents
+DC. `servo_master eth0 regs` prints and decodes it.
+
+### SYNC0 is on GPIO 2, not GPIO 21
+
+**GPIO 21 does not work as an input on this board.** With the ESC provably
+generating SYNC0, GPIO 21 read a hard low that beat an internal pull-up and
+showed zero transitions across 148k samples spanning five DC cycles. The same
+wire on GPIO 2 gave a clean 201 edges per 2 s immediately, nothing else
+changed.
+
+GPIO 21 was never verifiable before, because SYNC0 is not driven until a
+master activates DC — so a static level on that pin proved nothing either
+way. `app.overlay` is the authority: **module pin 3 (SYNC0) -> ESP32 GPIO 2.**
+
+### Verification, in order
+
+- [ ] `./scripts/fw.sh build sg90` then `flash`; console shows
+      `SYNC0 armed on GPIO 2 — polling at 1 ms until the master activates
+      the distributed clock`.
+- [ ] `sudo servo_master eth0 set 90` → master prints
+      `Distributed clocks: SYNC0 active on slave 1, 10000 us cycle, 2000 us shift.`
+- [ ] Slave console within a few hundred ms:
+      `SYNC0 running — cycle is now DC-synchronised (3 edges seen)`.
+- [ ] Master `dc=` figure converges toward zero over ~2 s. `peak=` after
+      settling is the jitter number worth quoting.
+- [ ] `wkc=3/3`, `low_wkc=0` throughout — DC must not cost working counter.
+- [ ] Ctrl-C → slave prints `SYNC0 stopped after N edges — back to 1 ms
+      polling.` This is expected, not a fault.
+- [ ] A/B it: `sudo SERVO_DC=0 servo_master eth0 sweep` versus the default.
+      Same motion, no `dc=` column, slave stays `polled`.
+
+**If the slave never locks** but `0x0151` bit 2 is set, suspect the wire
+before the code: SYNC0 is module pin 3 → GPIO 2. Note that SYNC0 reads high
+after a power cycle whether or not it is connected, so a static level proves
+nothing — only counted edges do.
 
 ## Future upgrades (not planned in detail)
 

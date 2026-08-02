@@ -13,6 +13,7 @@
 
 #include "ecat_slv.h"
 #include "esc.h"
+#include "sync0.h"
 #include "utypes.h"
 
 LOG_MODULE_REGISTER(soes_app, LOG_LEVEL_INF);
@@ -87,26 +88,74 @@ void soes_app_run(soes_apply_fn apply)
 	ecat_slv_init(&config);
 
 	/*
+	 * Arm SYNC0 after ecat_slv_init(), not before. The ESC's SYNC0 output
+	 * settles as DC is configured, and arming an edge interrupt across that
+	 * would count the settling transition as a real tick.
+	 */
+	if (sync0_present() && sync0_init() != 0) {
+		LOG_WRN("SYNC0 unavailable — the cycle will free-run on a local "
+			"timer rather than the bus clock");
+	}
+
+	/*
 	 * SOES prints only during init, so without this the stack runs
 	 * completely silently and a slave stuck in INIT is indistinguishable
 	 * from one that is not running at all.
 	 */
 	uint8_t last_status = 0xff;
 	uint16_t last_error = 0xffff;
+	/*
+	 * The AL-status line below only prints on a state change, which is
+	 * useless for watching SYNC0: the distributed clock starts a few
+	 * hundred milliseconds AFTER the last transition, so the edge count in
+	 * that line is always sampled too early and always reads zero. This
+	 * heartbeat is the only honest way to see whether edges are arriving.
+	 */
+	int64_t next_beat = k_uptime_get() + 2000;
+	uint32_t last_edges = 0;
+	bool probed = false;
 
 	while (1) {
+		/*
+		 * Pace first, then work. Once the distributed clock is running
+		 * this blocks until the SYNC0 edge and returns immediately
+		 * after it, so the SPI read of SM2 happens at a bus-wide agreed
+		 * instant rather than wherever the poll loop happened to land.
+		 * Before DC is up it falls back to a 1 ms sleep, which is what
+		 * this loop did before SYNC0 was wired in.
+		 */
+		(void)sync0_pace();
+
 		ecat_slv();
 
 		if (ESCvar.ALstatus != last_status ||
 		    ESCvar.ALerror != last_error) {
 			LOG_INF("AL control=0x%02x status=0x%02x error=0x%04x "
-				"SM2=%u SM3=%u",
+				"SM2=%u SM3=%u dc=%s edges=%u",
 				ESCvar.ALcontrol, ESCvar.ALstatus,
 				ESCvar.ALerror, ESCvar.ESC_SM2_sml,
-				ESCvar.ESC_SM3_sml);
+				ESCvar.ESC_SM3_sml,
+				sync0_locked() ? "SYNC0" : "polled",
+				sync0_edges());
 			last_status = ESCvar.ALstatus;
 			last_error = ESCvar.ALerror;
 		}
-		k_sleep(K_MSEC(1));
+
+		if (k_uptime_get() >= next_beat) {
+			uint32_t e = sync0_edges();
+
+			LOG_INF("sync: %s, %u edges (+%u in 2s, expect ~200), "
+				"pin=%d, AL=0x%02x",
+				sync0_locked() ? "DC-LOCKED" : "polled", e,
+				e - last_edges, sync0_level(), ESCvar.ALstatus);
+			/* Once, when we are in OP and should be seeing edges but
+			 * are not, find out what is actually on the pin. */
+			if (!probed && e == 0 && ESCvar.ALstatus == 0x08) {
+				probed = true;
+				sync0_probe();
+			}
+			last_edges = e;
+			next_beat = k_uptime_get() + 2000;
+		}
 	}
 }

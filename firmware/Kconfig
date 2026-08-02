@@ -25,12 +25,30 @@ config SERVO_LOCAL_SWEEP
 	  Leave this off for normal operation, where the angle comes from the
 	  master as process data.
 
+config ESC_DC_SYNC
+	bool "Pace the slave cycle from the SYNC0 distributed-clock output"
+	default y
+	help
+	  Runs one cycle of the slave application per SYNC0 edge instead of
+	  polling on a local timer, using the sync0-gpios pin declared on the
+	  ESC node in app.overlay (GPIO 21).
+
+	  SYNC0 only pulses after the master calls ec_dcsync0(), which cannot
+	  happen before SAFEOP, so the loop polls at 1 ms until edges appear
+	  and reverts to polling if they stop. Turning this off costs nothing
+	  functionally — the chain works either way — but the actuation instant
+	  then follows the master's scheduling jitter instead of the bus clock.
+
+	  This matters little for a hobby servo on a 20 ms PWM frame. It
+	  becomes mandatory the moment two axes have to move together.
+
 config ESC_USE_SOES
 	bool "Use the SOES slave stack instead of the built-in minimal slave"
 	default n
 	help
-	  Runs OpenEtherCATsociety/SOES (vendored under firmware/soes/upstream)
-	  in place of firmware/src/ecat_slave.c. Both sit on the same ax58100.c
+	  Runs OpenEtherCATsociety/SOES (fetched at configure time by
+	  firmware/CMakeLists.txt, pinned by commit — not vendored) in place of
+	  firmware/src/ecat_slave.c. Both sit on the same ax58100.c
 	  SPI layer and present identical process data — 2 bytes out, 6 in — so
 	  the master cannot tell them apart.
 

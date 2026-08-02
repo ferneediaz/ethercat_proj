@@ -17,6 +17,7 @@
 #include "soes_app.h"
 #endif
 #include "servo.h"
+#include "sync0.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -224,19 +225,30 @@ int main(void)
 	if (ecat_slave_init(servo_present() ? apply_servo_angle : NULL) != 0) {
 		return 0;
 	}
+	if (sync0_present() && sync0_init() != 0) {
+		LOG_WRN("SYNC0 unavailable — the cycle will free-run on a local "
+			"timer rather than the bus clock");
+	}
 
 	uint8_t last_logged = 0xff;
 
 	while (1) {
+		/* Blocks on the SYNC0 edge once the master has activated the
+		 * distributed clock, and falls back to a 1 ms sleep until then.
+		 * See sync0.c. */
+		(void)sync0_pace();
+
 		ecat_slave_poll();
 
 		uint8_t st = ecat_slave_state();
 
 		if (st != last_logged) {
-			LOG_INF("AL state: %s", ecat_state_name(st));
+			LOG_INF("AL state: %s (%s, %u SYNC0 edges)",
+				ecat_state_name(st),
+				sync0_locked() ? "DC-synchronised" : "polled",
+				sync0_edges());
 			last_logged = st;
 		}
-		k_sleep(K_MSEC(1));
 	}
 	return 0;
 }

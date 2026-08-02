@@ -75,6 +75,20 @@
 		spi-cpha;
 
 		irq-gpios   = <&gpio0 16 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
-		sync0-gpios = <&gpio0 21 GPIO_ACTIVE_HIGH>;
+
+		/*
+		 * SYNC0 is on GPIO 2, NOT GPIO 21 as the wiring tables
+		 * originally said.
+		 *
+		 * GPIO 21 does not work as an input on this board: with the
+		 * ESC provably generating SYNC0 (register 0x0984 bit 0 clears
+		 * after the start time, and 0x0981 reads 0x03), GPIO 21 read a
+		 * hard low that beat an internal pull-up and showed zero
+		 * transitions across 148k samples spanning five DC cycles.
+		 * Moving the same wire to GPIO 2 gave a clean 201 edges per
+		 * 2 s — exactly the 100 Hz expected — with nothing else
+		 * changed. Verified on hardware 2026-08-02.
+		 */
+		sync0-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
 	};
 };

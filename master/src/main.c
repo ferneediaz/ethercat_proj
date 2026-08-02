@@ -22,6 +22,9 @@ static void usage(const char *prog)
            "Usage: %s <ifname> <command> [args]\n"
            "Commands:\n"
            "  scan             list slaves and check the ASIX identity\n"
+           "  regs             dump and decode the ESC configuration registers\n"
+           "  gpio             identify the L1-L8 LEDs and SW1/SW2 buttons\n"
+           "  buttons [secs]   watch every ESC input for SW1/SW2 (default 45s)\n"
            "  op               bring the slave to OP and hold (Ctrl-C to stop)\n"
            "  set <angle>      write one target angle (0-180) and hold\n"
            "  sweep [period_s] sweep 0->180->0 (default period 4s, Ctrl-C to stop)\n"
@@ -195,6 +198,18 @@ int main(int argc, char *argv[])
       ecat_print_slaves();
       printf("\n");
       ecat_dump_regs();
+   }
+   else if (strcmp(cmd, "gpio") == 0)
+   {
+      /* Identify the board's L1-L8 LEDs and SW1/SW2 buttons. Works in INIT,
+       * so it needs no host firmware and no process data. */
+      ecat_gpio_probe();
+   }
+   else if (strcmp(cmd, "buttons") == 0)
+   {
+      /* Just the input half of the gpio probe, with a long enough window
+       * that a human can be told to press something and still be in time. */
+      ecat_button_watch(argc >= 4 ? atoi(argv[3]) : 45);
    }
    else if (strcmp(cmd, "op") == 0)
    {

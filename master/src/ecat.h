@@ -81,6 +81,34 @@ int64_t ecat_dc_correction(void);
  */
 void ecat_dc_report(void);
 
+/*
+ * Identify what the board's L1-L8 LEDs and SW1/SW2 buttons are wired to.
+ *
+ * In SPI-slave PDI mode the AX58100's IO[31:0] pins act as GPIO, driven from
+ * General Purpose Outputs (0x0F10) and read back at General Purpose Inputs
+ * (0x0F18) — datasheet v1.09 register map, and Table 1-4: "The IO[31:0] in PDI
+ * Digital mode is for DIO[31:0], in PDI SPI slave mode is for GPIO[31:0]".
+ *
+ * Walks a single bit across the outputs so the LEDs can be watched, then
+ * polls the inputs so the buttons can be pressed. Works in INIT, so no host
+ * firmware or process data is needed.
+ *
+ * Findings on this module, 2026-08-02: 0x0152 reads 0x0000, so all 32 pins
+ * are inputs and L1-L8 cannot light no matter what is written to 0x0F10.
+ * SW1 is IO[16] and SW2 is IO[17], both active low.
+ */
+void ecat_gpio_probe(void);
+
+/*
+ * Watch every input the buttons could plausibly be wired to, for `seconds`.
+ *
+ * The gpio probe's 15 s input window is too short to coordinate with a person
+ * at the board, and it only samples 0x0F18. This polls at 20 ms — fast enough
+ * for a quick tap — and also watches AL Status and DL Status, so a button that
+ * resets the chip or drops a port shows up as something other than silence.
+ */
+void ecat_button_watch(int seconds);
+
 /* Release the interface. Safe to call at any time after ecat_open. */
 void ecat_close(void);
 

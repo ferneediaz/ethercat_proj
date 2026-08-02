@@ -202,6 +202,150 @@ void ecat_dump_regs(void)
    }
 }
 
+void ecat_gpio_probe(void)
+{
+   uint16 a = ec_slave[1].configadr;
+   uint8_t al = 0;
+   uint16_t ext_pdi = 0;
+   uint32_t out = 0, in = 0, in0 = 0;
+
+   ec_FPRD(a, 0x0130, sizeof(al), &al, EC_TIMEOUTRET);
+   /* 0x0152-0x0153: Extended PDI configuration. In Digital I/O / GPIO terms
+    * this is where the EEPROM says which pins are inputs and which are
+    * outputs, configured in pairs. We cannot change it without writing the
+    * EEPROM, so it decides whether driving the LEDs is possible at all. */
+   ec_FPRD(a, 0x0152, sizeof(ext_pdi), &ext_pdi, EC_TIMEOUTRET);
+   ec_FPRD(a, 0x0F10, sizeof(out), &out, EC_TIMEOUTRET);
+   ec_FPRD(a, 0x0F18, sizeof(in0), &in0, EC_TIMEOUTRET);
+
+   printf("AL Status        0x%2.2x  (RUN LED shows this: 0x01 INIT=off, "
+          "0x02 PREOP=blinking,\n                       0x04 SAFEOP=single "
+          "flash, 0x08 OP=solid)\n", al);
+   printf("0x0152 Ext PDI   0x%4.4x\n", ext_pdi);
+   printf("0x0F10 GP output 0x%8.8x\n", (unsigned)out);
+   printf("0x0F18 GP input  0x%8.8x\n\n", (unsigned)in0);
+
+   printf("Walking one bit across General Purpose Outputs 0x0F10.\n");
+   printf("Watch L1..L8 along the top edge of the board.\n\n");
+   for (int bit = 0; bit < 8; bit++)
+   {
+      uint32_t v = 1u << bit;
+
+      ec_FPWR(a, 0x0F10, sizeof(v), &v, EC_TIMEOUTRET);
+      ec_FPRD(a, 0x0F10, sizeof(out), &out, EC_TIMEOUTRET);
+      printf("  wrote bit %d (0x%8.8x), reads back 0x%8.8x\n", bit,
+             (unsigned)v, (unsigned)out);
+      fflush(stdout);
+      osal_usleep(600000);
+   }
+
+   uint32_t all = 0x000000ffu;
+   ec_FPWR(a, 0x0F10, sizeof(all), &all, EC_TIMEOUTRET);
+   printf("\nAll eight bits set. L1..L8 stay dark while 0x0152 is 0x0000 —\n"
+          "every pin is an input, so none of them can drive.\n");
+   fflush(stdout);
+   osal_usleep(1500000);
+
+   uint32_t zero = 0;
+   ec_FPWR(a, 0x0F10, sizeof(zero), &zero, EC_TIMEOUTRET);
+   printf("Cleared.\n\n");
+
+   printf("Now reading General Purpose Inputs 0x0F18 for 15 s.\n");
+   printf("Press SW1 and SW2 — any bit that changes is that button.\n\n");
+   uint32_t last = in0;
+   for (int i = 0; i < 150; i++)
+   {
+      ec_FPRD(a, 0x0F18, sizeof(in), &in, EC_TIMEOUTRET);
+      if (in != last)
+      {
+         printf("  inputs 0x%8.8x -> 0x%8.8x   (changed bits: 0x%8.8x)\n",
+                (unsigned)last, (unsigned)in, (unsigned)(in ^ last));
+         fflush(stdout);
+         last = in;
+      }
+      osal_usleep(100000);
+   }
+   printf("\nExpect bits 16 and 17: SW1 is IO[16], SW2 is IO[17], both active "
+          "low.\nUse `buttons [secs]` for a longer window than this.\n");
+}
+
+void ecat_button_watch(int seconds)
+{
+   uint16 a = ec_slave[1].configadr;
+   uint32_t in = 0, last_in = 0;
+   uint16_t dl = 0, last_dl = 0;
+   uint8_t al = 0, last_al = 0;
+   int ticks;
+   int hits = 0;
+
+   /*
+    * Clamp before doing anything. A bad argument used to fall through as
+    * zero ticks, which printed "0 changes seen" and then the conclusion that
+    * the buttons are not wired to the chip — a wrong answer produced by never
+    * having looked. Refuse instead.
+    */
+   if (seconds < 1 || seconds > 600)
+   {
+      fprintf(stderr, "buttons: watch time must be 1..600 seconds (got %d).\n",
+              seconds);
+      return;
+   }
+   ticks = seconds * 50; /* 20 ms per tick */
+
+   ec_FPRD(a, 0x0F18, sizeof(last_in), &last_in, EC_TIMEOUTRET);
+   ec_FPRD(a, 0x0110, sizeof(last_dl), &last_dl, EC_TIMEOUTRET);
+   ec_FPRD(a, 0x0130, sizeof(last_al), &last_al, EC_TIMEOUTRET);
+
+   printf("Baseline: 0x0F18 inputs 0x%8.8x, 0x0110 DL status 0x%4.4x, "
+          "AL 0x%2.2x\n", (unsigned)last_in, last_dl, last_al);
+   printf("Watching for %d s at 20 ms. Press SW1, then SW2, then both.\n\n",
+          seconds);
+   fflush(stdout);
+
+   for (int i = 0; i < ticks; i++)
+   {
+      if (ec_FPRD(a, 0x0F18, sizeof(in), &in, EC_TIMEOUTRET) > 0 &&
+          in != last_in)
+      {
+         printf("[%5.1fs] GPIO IN  0x%8.8x -> 0x%8.8x   bit(s) 0x%8.8x\n",
+                i * 0.02, (unsigned)last_in, (unsigned)in,
+                (unsigned)(in ^ last_in));
+         last_in = in;
+         hits++;
+      }
+      if (ec_FPRD(a, 0x0110, sizeof(dl), &dl, EC_TIMEOUTRET) > 0 &&
+          dl != last_dl)
+      {
+         printf("[%5.1fs] DL STAT  0x%4.4x -> 0x%4.4x   (port/link change)\n",
+                i * 0.02, last_dl, dl);
+         last_dl = dl;
+         hits++;
+      }
+      if (ec_FPRD(a, 0x0130, sizeof(al), &al, EC_TIMEOUTRET) > 0 &&
+          al != last_al)
+      {
+         printf("[%5.1fs] AL STAT  0x%2.2x -> 0x%2.2x   (state change/reset)\n",
+                i * 0.02, last_al, al);
+         last_al = al;
+         hits++;
+      }
+      osal_usleep(20000);
+   }
+
+   printf("\n%d change(s) seen.\n", hits);
+   if (hits == 0)
+   {
+      /* Measured on this board 2026-08-02: SW1 is IO[16] (bit 16) and SW2 is
+       * IO[17] (bit 17), both active low. So silence here means the buttons
+       * were not pressed, or the run was too short — not that they are
+       * unwired. Do not let this print a conclusion the hardware refutes. */
+      printf("No input moved. On this board SW1 is IO[16] and SW2 is IO[17],\n"
+             "so expect bits 16 and 17 of 0x0F18 to drop to 0 while held.\n"
+             "Nothing changing most likely means nothing was pressed.\n");
+   }
+   fflush(stdout);
+}
+
 bool ecat_to_op(void)
 {
    ec_config_map(&IOmap);

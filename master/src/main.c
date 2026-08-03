@@ -27,6 +27,7 @@ static void usage(const char *prog)
            "  buttons [secs]   watch every ESC input for SW1/SW2 (default 45s)\n"
            "  op               bring the slave to OP and hold (Ctrl-C to stop)\n"
            "  set <angle>      write one target angle (0-180) and hold\n"
+           "  move <from> <to> time one move, sampling actual every cycle\n"
            "  sweep [period_s] sweep 0->180->0 (default period 4s, Ctrl-C to stop)\n"
            "Example: sudo %s eth0 scan\n",
            prog, prog);
@@ -72,6 +73,17 @@ static int run_loop(double sweep_period, uint16_t fixed_angle)
    {
       fprintf(stderr,
               "Slave output image is smaller than servo_outputs_t — PDO "
+              "mapping mismatch with pdo_layout.h.\n");
+      return EXIT_FAILURE;
+   }
+   /* Symmetric with the check above, and not merely tidiness: the status
+    * line used to fall back to printing 0 when this was NULL, so an input
+    * mapping that had grown past the SyncManager showed up as "the slave is
+    * echoing zero" rather than as the mapping error it is. */
+   if (in == NULL)
+   {
+      fprintf(stderr,
+              "Slave input image is smaller than servo_inputs_t — PDO "
               "mapping mismatch with pdo_layout.h.\n");
       return EXIT_FAILURE;
    }
@@ -131,17 +143,18 @@ static int run_loop(double sweep_period, uint16_t fixed_angle)
       {
          if (ecat_dc_active())
          {
-            printf("t=%6.1fs target=%3u echo=%3u wkc=%d/%d low_wkc=%d "
-                   "dc=%+8lldns peak=%lldns\n",
-                   t, target, in ? in->echo_angle : 0, wkc,
+            printf("t=%6.1fs target=%3u echo=%3u actual=%3u wkc=%d/%d "
+                   "low_wkc=%d dc=%+8lldns peak=%lldns\n",
+                   t, target, in->echo_angle, in->actual_angle, wkc,
                    ecat_expected_wkc(), low_wkc_cycles,
                    (long long)ecat_dc_delta(), (long long)dc_peak_ns);
          }
          else
          {
-            printf("t=%6.1fs target=%3u echo=%3u wkc=%d/%d low_wkc=%d\n", t,
-                   target, in ? in->echo_angle : 0, wkc, ecat_expected_wkc(),
-                   low_wkc_cycles);
+            printf("t=%6.1fs target=%3u echo=%3u actual=%3u wkc=%d/%d "
+                   "low_wkc=%d\n",
+                   t, target, in->echo_angle, in->actual_angle, wkc,
+                   ecat_expected_wkc(), low_wkc_cycles);
          }
          fflush(stdout);
       }
@@ -154,6 +167,109 @@ static int run_loop(double sweep_period, uint16_t fixed_angle)
    {
       printf("Peak DC phase error after settling: %lld ns.\n",
              (long long)dc_peak_ns);
+   }
+   return EXIT_SUCCESS;
+}
+
+
+/*
+ * Command one step change and trace the axis to it, sampling every cycle.
+ *
+ * The 1 Hz status line in run_loop() is far too coarse to see an axis move:
+ * a 180-degree move at the stepper's default rate takes about 250 ms, so a
+ * once-a-second sample almost always lands after arrival and actual looks
+ * identical to the command. That is precisely the case where a field wired to
+ * the target and a field wired to a position counter are indistinguishable.
+ *
+ * Sampling every cycle separates them. A real position counter passes through
+ * intermediate values on the way; an echo jumps in one step. The count of
+ * distinct intermediate values printed below is what makes that testable
+ * rather than a matter of opinion.
+ *
+ * The elapsed time is also the measurement Phase 3 needs: change the step
+ * interval over CoE and this number must change proportionally.
+ */
+static int run_move(uint16_t from, uint16_t to)
+{
+   servo_outputs_t *out = ecat_outputs();
+   servo_inputs_t *in = ecat_inputs();
+
+   if (out == NULL || in == NULL)
+   {
+      fprintf(stderr, "PDO mapping mismatch with pdo_layout.h.\n");
+      return EXIT_FAILURE;
+   }
+
+   struct timespec next;
+   clock_gettime(CLOCK_MONOTONIC, &next);
+
+   /* Park at the starting angle and let it settle, so the move being timed
+    * starts from a known standstill rather than mid-travel. */
+   out->target_angle = from;
+   for (int i = 0; i < 200 && !stop_requested; i++)
+   {
+      ecat_cycle();
+      cycle_sleep(&next, ecat_dc_correction());
+   }
+   printf("parked at %u (actual %u), now commanding %u\n", from,
+          in->actual_angle, to);
+
+   /* Distinct values of actual seen strictly between the endpoints. An echo
+    * of the command produces none of these. */
+   uint16_t seen[512];
+   int nseen = 0;
+   uint16_t prev = in->actual_angle;
+   int cycles = 0;
+   int arrived_at = -1;
+   const int limit = 2000; /* 20 s at a 10 ms cycle */
+
+   struct timespec t0;
+   clock_gettime(CLOCK_MONOTONIC, &t0);
+   out->target_angle = to;
+
+   while (cycles < limit && !stop_requested)
+   {
+      ecat_cycle();
+      uint16_t a = in->actual_angle;
+
+      if (a != prev)
+      {
+         if (nseen < (int)(sizeof(seen) / sizeof(seen[0])))
+         {
+            seen[nseen++] = a;
+         }
+         prev = a;
+      }
+      if (arrived_at < 0 && in->echo_angle == to && a == in->echo_angle)
+      {
+         arrived_at = cycles;
+         break;
+      }
+      cycles++;
+      cycle_sleep(&next, ecat_dc_correction());
+   }
+
+   struct timespec t1;
+   clock_gettime(CLOCK_MONOTONIC, &t1);
+   double ms = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 +
+               (double)(t1.tv_nsec - t0.tv_nsec) / 1e6;
+
+   /* Intermediates are the transitions that were not the final value. */
+   int intermediates = nseen;
+   if (intermediates > 0 && seen[nseen - 1] == in->actual_angle)
+   {
+      intermediates--;
+   }
+
+   printf("move %u -> %u: arrived=%s elapsed_ms=%.1f cycles=%d "
+          "transitions=%d intermediates=%d final_actual=%u final_echo=%u\n",
+          from, to, arrived_at >= 0 ? "yes" : "NO", ms, cycles, nseen,
+          intermediates, in->actual_angle, in->echo_angle);
+
+   if (arrived_at < 0)
+   {
+      fprintf(stderr, "Axis never reported reaching %u.\n", to);
+      return EXIT_FAILURE;
    }
    return EXIT_SUCCESS;
 }
@@ -218,6 +334,23 @@ int main(int argc, char *argv[])
       {
          printf("Holding OP; Ctrl-C to stop.\n");
          rc = run_loop(0.0, 0);
+      }
+      else
+      {
+         rc = EXIT_FAILURE;
+      }
+   }
+   else if (strcmp(cmd, "move") == 0)
+   {
+      uint16_t from, to;
+      if (argc < 5 || !angle_parse(argv[3], &from) || !angle_parse(argv[4], &to))
+      {
+         fprintf(stderr, "move needs <from> <to>, both 0-180.\n");
+         rc = EXIT_FAILURE;
+      }
+      else if (ecat_to_op())
+      {
+         rc = run_move(from, to);
       }
       else
       {

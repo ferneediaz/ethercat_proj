@@ -130,6 +130,39 @@ static void apply_target_angle(uint16_t degrees)
 }
 
 /*
+ * Where the axis reports it actually is, for the input PDO.
+ *
+ * Returns the commanded angle as a fallback when the actuator cannot answer,
+ * because the alternative — reporting 0, or the previous good value — would
+ * be worse: a master watching this field would see the axis snap to zero or
+ * freeze, and conclude the mechanism had failed.
+ *
+ * The fallback is announced once rather than every cycle. Silently
+ * substituting the command for a measurement is exactly the failure this
+ * whole change exists to remove, so it must not be quiet.
+ */
+static uint16_t actuator_actual_angle(uint16_t commanded)
+{
+	static bool warned;
+	uint16_t actual;
+	int rc;
+
+	rc = servo_present() ? servo_actual_angle(&actual)
+			     : stepper_actual_angle(&actual);
+	if (rc == 0) {
+		return actual;
+	}
+
+	if (!warned) {
+		warned = true;
+		LOG_WRN("actuator cannot report position (%d) — the input PDO "
+			"will carry the COMMANDED angle. It is not feedback; "
+			"do not read it as proof the axis arrived.", rc);
+	}
+	return commanded;
+}
+
+/*
  * Bring the actuator up once, before either slave stack starts, and decide
  * whether it is fit to be driven.
  *
@@ -291,7 +324,7 @@ int main(void)
 		/* Hands the AL state machine, the CoE mailbox and the PDO
 		 * mapping to SOES. Never returns. */
 #if defined(CONFIG_ESC_USE_SOES)
-		soes_app_run(apply);
+		soes_app_run(apply, apply ? actuator_actual_angle : NULL);
 #endif
 		return 0;
 	}
@@ -304,7 +337,7 @@ int main(void)
 	 * time, and the working counter it checks only increments when we
 	 * have actually read the outputs and written the inputs.
 	 */
-	if (ecat_slave_init(apply) != 0) {
+	if (ecat_slave_init(apply, apply ? actuator_actual_angle : NULL) != 0) {
 		return 0;
 	}
 	if (sync0_present() && sync0_init() != 0) {

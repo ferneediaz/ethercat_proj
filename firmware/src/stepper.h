@@ -62,4 +62,21 @@ int stepper_init(void);
  */
 int stepper_set_angle(uint16_t degrees);
 
+/*
+ * Where the axis reports it actually is, in degrees, from the motion
+ * controller's own position counter. Returns 0 and fills *degrees on success,
+ * negative errno otherwise (and leaves *degrees untouched).
+ *
+ * This is not the same value as the last commanded angle: while a move is in
+ * flight it lags the target and converges as the pulses go out. That lag is
+ * the whole reason the field exists — an input PDO that merely echoed the
+ * command would prove the frame arrived and nothing else.
+ *
+ * Still OPEN LOOP. The counter advances when the controller emits a step, not
+ * when the motor takes one. Under-current, over-speed or a jammed shaft all
+ * produce steps that are counted and never happen, and nothing here can tell.
+ * Closing that gap needs an encoder.
+ */
+int stepper_actual_angle(uint16_t *degrees);
+
 #endif /* STEPPER_H */

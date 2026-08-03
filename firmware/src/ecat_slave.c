@@ -32,6 +32,7 @@ static struct sm_cfg sm_out;
 static struct sm_cfg sm_in;
 static uint8_t cur_state = ESC_AL_INIT;
 static ecat_apply_fn apply_angle;
+static ecat_actual_fn read_actual;
 static uint16_t last_angle;
 
 /*
@@ -151,7 +152,9 @@ static bool enter_safeop(void)
  *
  * The read of SM3 is also what increments the working counter the master
  * checks, so the exchange has to run every cycle even when nothing has
- * changed.
+ * changed. Position is sampled every cycle for the same reason: it changes
+ * while the axis moves whether or not a new target arrived, and a master
+ * watching it needs it fresh.
  *
  * The actuator, though, is driven only on change. Re-commanding an unchanged
  * target every cycle is not the harmless no-op it looks like: a stepper's
@@ -183,15 +186,20 @@ static void exchange_process_data(void)
 	/* Echo back what we are applying. The master compares this with what
 	 * it sent, which is the cheapest possible end-to-end check that the
 	 * whole chain is live rather than merely connected. */
+	uint16_t actual = read_actual ? read_actual(last_angle) : last_angle;
+
 	memset(in, 0, sizeof(in));
 	in[0] = (uint8_t)(last_angle & 0xff);
 	in[1] = (uint8_t)(last_angle >> 8);
+	in[2] = (uint8_t)(actual & 0xff);
+	in[3] = (uint8_t)(actual >> 8);
 	esc_write(sm_in.addr, in, sizeof(in));
 }
 
-int ecat_slave_init(ecat_apply_fn apply)
+int ecat_slave_init(ecat_apply_fn apply, ecat_actual_fn actual)
 {
 	apply_angle = apply;
+	read_actual = actual;
 	last_angle = 0;
 	angle_applied = false;
 	report_state(ESC_AL_INIT);

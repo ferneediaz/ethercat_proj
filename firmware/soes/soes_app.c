@@ -21,6 +21,7 @@ LOG_MODULE_REGISTER(soes_app, LOG_LEVEL_INF);
 _Objects Obj;
 
 static soes_apply_fn apply_angle;
+static soes_actual_fn read_actual;
 
 /*
  * Last target actually handed to the actuator. 0xffff is a sentinel outside
@@ -58,16 +59,28 @@ void cb_set_outputs(void)
 }
 
 /*
- * Publish what we are actually applying, not what was asked for. If the two
- * ever diverge the master sees it immediately, which is the cheapest
- * end-to-end check that the chain is live rather than merely connected.
+ * Build the input PDO. SOES calls this once per cycle.
+ *
+ * echo_angle now reports the angle actually accepted rather than
+ * Obj.Outputs.target_angle — which is what the comment here always claimed
+ * and the code never did. The two differ for one cycle after a new command
+ * arrives, and publishing the raw output claimed the slave had acted before
+ * it had.
+ *
+ * actual_angle is where the axis reports it really is. It is sampled every
+ * cycle, not only when the target changes, because it moves while the axis
+ * travels whether or not a new command arrived — that lag is the entire
+ * point of carrying it.
  */
 void cb_get_inputs(void)
 {
-	Obj.Inputs.echo_angle = Obj.Outputs.target_angle;
+	uint16_t echo = (last_applied == NO_ANGLE_APPLIED) ? 0 : last_applied;
+
+	Obj.Inputs.echo_angle = echo;
+	Obj.Inputs.actual_angle = read_actual ? read_actual(echo) : echo;
 }
 
-void soes_app_run(soes_apply_fn apply)
+void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 {
 	static esc_cfg_t config = {
 		.user_arg = NULL,
@@ -99,6 +112,7 @@ void soes_app_run(soes_apply_fn apply)
 	};
 
 	apply_angle = apply;
+	read_actual = actual;
 	last_applied = NO_ANGLE_APPLIED;
 
 	LOG_INF("starting SOES");

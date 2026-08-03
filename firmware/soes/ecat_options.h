@@ -64,6 +64,6 @@
 #define MAX_TXPDO_SIZE 42
 
 #define MAX_MAPPINGS_SM2 1
-#define MAX_MAPPINGS_SM3 2
+#define MAX_MAPPINGS_SM3 3
 
 #endif /* __ECAT_OPTIONS_H__ */

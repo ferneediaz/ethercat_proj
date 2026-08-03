@@ -27,12 +27,28 @@ typedef struct
  * Six bytes, not two, because that is what the stock Beckhoff demo EEPROM
  * the module ships with declares for SyncManager 3. Matching the EEPROM
  * avoids rewriting it, and a bad EEPROM write stops the module enumerating
- * at all. Only echo_angle carries meaning; the padding exists so the length
- * the master programs into SM3 is satisfied. */
+ * at all.
+ *
+ * actual_angle occupies two of the four bytes that used to be padding, so
+ * SM3 is still six bytes and the EEPROM is untouched.
+ *
+ * The two fields are NOT the same thing, and the difference is the point:
+ *
+ *   echo_angle   what the slave was told and accepted. Confirms the command
+ *                arrived. Equals target as soon as a frame lands.
+ *   actual_angle where the axis actually is, read from the motion
+ *                controller's position counter. Lags echo while moving and
+ *                converges on arrival.
+ *
+ * This is the Target Position / Position Actual Value pairing CiA 402 is
+ * built around. It remains open loop: the counter reports steps emitted, not
+ * steps the motor took, so a skipped step is invisible here. Closing that
+ * needs an encoder on the shaft. */
 typedef struct
 {
-   uint16_t echo_angle;  /* slave echoes the angle it is applying */
-   uint8_t reserved[4];  /* unused; present to match the EEPROM's SM3 size */
+   uint16_t echo_angle;   /* the angle the slave accepted */
+   uint16_t actual_angle; /* where the axis reports it actually is */
+   uint8_t reserved[2];   /* unused; present to match the EEPROM's SM3 size */
 } servo_inputs_t;
 
 #pragma pack(pop)

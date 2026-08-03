@@ -14,6 +14,7 @@ typedef struct {
 	/* Inputs: slave -> master (TxPDO 0x1A00, mapped from 0x6000) */
 	struct {
 		uint16_t echo_angle;
+		uint16_t actual_angle;
 	} Inputs;
 
 	/* Outputs: master -> slave (RxPDO 0x1600, mapped from 0x7000) */

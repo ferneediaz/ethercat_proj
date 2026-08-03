@@ -29,9 +29,22 @@
  */
 typedef void (*ecat_apply_fn)(uint16_t target_angle);
 
+/*
+ * Asked once per cycle for where the axis actually is, in degrees, so the
+ * input PDO can carry position rather than an echo of the command.
+ *
+ * Takes the commanded angle so the actuator can fall back to it when it has
+ * no position sense — the alternative, reporting zero, would look to a master
+ * like the axis had collapsed to an end stop.
+ *
+ * May be NULL, in which case the input PDO reports the commanded angle and
+ * the field means exactly what the old echo meant.
+ */
+typedef uint16_t (*ecat_actual_fn)(uint16_t commanded_angle);
+
 /* Prepare the slave and park it in INIT. esc_init() must have succeeded
  * first. Returns 0 on success, negative errno otherwise. */
-int ecat_slave_init(ecat_apply_fn apply);
+int ecat_slave_init(ecat_apply_fn apply, ecat_actual_fn actual);
 
 /*
  * Service the state machine and, when in SAFEOP or OP, exchange process

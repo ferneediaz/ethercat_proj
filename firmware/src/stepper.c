@@ -181,6 +181,37 @@ int stepper_set_angle(uint16_t degrees)
 	return 0;
 }
 
+/* Inverse of angle_to_steps(). Same rounding, so a value that went out as
+ * N degrees comes back as N degrees rather than N-1. */
+static uint16_t steps_to_angle(int32_t steps)
+{
+	if (steps <= 0) {
+		return 0;
+	}
+	uint32_t deg = ((uint32_t)steps * DEGREES_PER_REV + STEPS_PER_REV / 2u) /
+		       STEPS_PER_REV;
+
+	return (uint16_t)MIN(deg, (uint32_t)STEPPER_ANGLE_MAX);
+}
+
+int stepper_actual_angle(uint16_t *degrees)
+{
+	int32_t steps = 0;
+	int rc;
+
+	if (degrees == NULL) {
+		return -EINVAL;
+	}
+
+	rc = stepper_ctrl_get_actual_position(ctrl, &steps);
+	if (rc < 0) {
+		return rc;
+	}
+
+	*degrees = steps_to_angle(steps);
+	return 0;
+}
+
 #else /* no stepper axis in the devicetree */
 
 bool stepper_present(void)
@@ -197,6 +228,12 @@ int stepper_set_angle(uint16_t degrees)
 {
 	ARG_UNUSED(degrees);
 	return 0;
+}
+
+int stepper_actual_angle(uint16_t *degrees)
+{
+	ARG_UNUSED(degrees);
+	return -ENODEV;
 }
 
 #endif

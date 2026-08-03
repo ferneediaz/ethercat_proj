@@ -13,6 +13,10 @@ LOG_MODULE_REGISTER(servo, LOG_LEVEL_INF);
 #define SERVO_ANGLE_MAX 180u
 
 static const struct pwm_dt_spec servo_pwm = PWM_DT_SPEC_GET(SERVO_NODE);
+
+/* Last angle written. This is all a servo build can report as "actual" —
+ * see the note on servo_actual_angle() in servo.h. */
+static uint16_t last_commanded;
 static const uint32_t min_pulse_ns = DT_PROP(SERVO_NODE, min_pulse);
 static const uint32_t max_pulse_ns = DT_PROP(SERVO_NODE, max_pulse);
 
@@ -54,8 +58,19 @@ int servo_set_angle(uint16_t degrees)
 
 	if (rc < 0) {
 		LOG_ERR("pwm_set_pulse failed for %u deg: %d", degrees, rc);
+		return rc;
 	}
+	last_commanded = degrees;
 	return rc;
+}
+
+int servo_actual_angle(uint16_t *degrees)
+{
+	if (degrees == NULL) {
+		return -EINVAL;
+	}
+	*degrees = last_commanded;
+	return 0;
 }
 
 #else /* no sg90 overlay */
@@ -74,6 +89,12 @@ int servo_set_angle(uint16_t degrees)
 {
 	ARG_UNUSED(degrees);
 	return 0;
+}
+
+int servo_actual_angle(uint16_t *degrees)
+{
+	ARG_UNUSED(degrees);
+	return -ENODEV;
 }
 
 #endif

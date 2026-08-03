@@ -9,8 +9,9 @@
  * The two mappings below are what make the PDO sizes come out right:
  *
  *   RxPDO 0x1600 -> 0x7000:01, 16 bits            = 2 bytes  (matches SM2)
- *   TxPDO 0x1A00 -> 0x6000:01, 16 bits
- *                 + 32 bits of padding            = 6 bytes  (matches SM3)
+ *   TxPDO 0x1A00 -> 0x6000:01, 16 bits (echo angle)
+ *                 + 0x6000:02, 16 bits (actual angle)
+ *                 + 16 bits of padding            = 6 bytes  (matches SM3)
  *
  * The padding entry is not decoration. The EEPROM declares SM3 as 6 bytes,
  * and if the mapping produced only 2 the master would compute a different
@@ -45,7 +46,8 @@ static const char acName1600_01[] = "Target Angle";
 static const char acName1A00[] = "Servo TxPDO";
 static const char acName1A00_00[] = "Max SubIndex";
 static const char acName1A00_01[] = "Echo Angle";
-static const char acName1A00_02[] = "Padding";
+static const char acName1A00_02[] = "Actual Angle";
+static const char acName1A00_03[] = "Padding";
 static const char acName1C00[] = "Sync Manager Communication Type";
 static const char acName1C00_00[] = "Max SubIndex";
 static const char acName1C00_01[] = "Communications Type SM0";
@@ -61,6 +63,7 @@ static const char acName1C13_01[] = "PDO Mapping";
 static const char acName6000[] = "Servo Inputs";
 static const char acName6000_00[] = "Max SubIndex";
 static const char acName6000_01[] = "Echo Angle";
+static const char acName6000_02[] = "Actual Angle";
 static const char acName7000[] = "Servo Outputs";
 static const char acName7000_00[] = "Max SubIndex";
 static const char acName7000_01[] = "Target Angle";
@@ -99,12 +102,19 @@ const _objd SDO1600[] = {
 	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1600_01, 0x70000110, NULL},
 };
 
-/* 0x00000020 is the standard "gap" entry: no object, 0x20 (32) bits of
- * padding, taking this PDO from 2 bytes to the 6 the EEPROM declares. */
+/* Mapping entries encode index<<16 | subindex<<8 | bitlength.
+ *
+ * 16 bits of echo + 16 of actual position + a 0x00000010 gap entry (no
+ * object, 16 bits of padding) = 6 bytes, which is what the EEPROM declares
+ * for SM3. The gap shrank from 32 bits to 16 when actual position was added,
+ * so the total is unchanged and the EEPROM is untouched. Get this wrong and
+ * the master computes a different input size than the SyncManager it
+ * programmed, and refuses SAFEOP. */
 const _objd SDO1A00[] = {
-	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1A00_00, 2, NULL},
+	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1A00_00, 3, NULL},
 	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_01, 0x60000110, NULL},
-	{0x02, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_02, 0x00000020, NULL},
+	{0x02, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_02, 0x60000210, NULL},
+	{0x03, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_03, 0x00000010, NULL},
 };
 
 const _objd SDO1C00[] = {
@@ -124,9 +134,11 @@ const _objd SDO1C13[] = {
 };
 
 const _objd SDO6000[] = {
-	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName6000_00, 1, NULL},
+	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName6000_00, 2, NULL},
 	{0x01, DTYPE_UNSIGNED16, 16, ATYPE_RO, acName6000_01, 0,
 	 &Obj.Inputs.echo_angle},
+	{0x02, DTYPE_UNSIGNED16, 16, ATYPE_RO, acName6000_02, 0,
+	 &Obj.Inputs.actual_angle},
 };
 const _objd SDO7000[] = {
 	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName7000_00, 1, NULL},
@@ -141,11 +153,11 @@ const _objectlist SDOobjects[] = {
 	{0x100A, OTYPE_VAR, 0, 0, acName100A, SDO100A},
 	{0x1018, OTYPE_RECORD, 4, 0, acName1018, SDO1018},
 	{0x1600, OTYPE_RECORD, 1, 0, acName1600, SDO1600},
-	{0x1A00, OTYPE_RECORD, 2, 0, acName1A00, SDO1A00},
+	{0x1A00, OTYPE_RECORD, 3, 0, acName1A00, SDO1A00},
 	{0x1C00, OTYPE_ARRAY, 4, 0, acName1C00, SDO1C00},
 	{0x1C12, OTYPE_ARRAY, 1, 0, acName1C12, SDO1C12},
 	{0x1C13, OTYPE_ARRAY, 1, 0, acName1C13, SDO1C13},
-	{0x6000, OTYPE_RECORD, 1, 0, acName6000, SDO6000},
+	{0x6000, OTYPE_RECORD, 2, 0, acName6000, SDO6000},
 	{0x7000, OTYPE_RECORD, 1, 0, acName7000, SDO7000},
 	{0xffff, 0xff, 0xff, 0xff, NULL, NULL},
 };

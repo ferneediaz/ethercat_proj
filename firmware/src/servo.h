@@ -28,4 +28,20 @@ int servo_init(void);
  * instead of dropping the update. */
 int servo_set_angle(uint16_t degrees);
 
+/*
+ * Where the servo is, in degrees. Returns 0 and fills *degrees, or negative
+ * errno.
+ *
+ * Reports the last COMMANDED angle, because an SG90 has no position output —
+ * there is a potentiometer inside it, but the three wires are power, ground
+ * and pulse-width in, so nothing comes back. The value is therefore a
+ * statement of intent, not a measurement, and it will not lag while the horn
+ * is travelling the way the stepper's does.
+ *
+ * Kept so both actuators satisfy the same interface. The asymmetry is real
+ * and worth knowing rather than papering over: on a servo build, actual and
+ * echo agreeing proves nothing about the shaft.
+ */
+int servo_actual_angle(uint16_t *degrees);
+
 #endif /* SERVO_H */

@@ -1,13 +1,25 @@
 /*
- * Actuator overlay: NEMA 17 stepper via an A4988 (phase 6).
+ * Actuator overlay: NEMA 17 stepper via a DRV8825 (phase 6).
  *
  *   west build -b esp32s3_devkitc/esp32s3/procpu firmware \
  *       -- -DEXTRA_DTC_OVERLAY_FILE=overlays/nema17.overlay
  *
  * Motor 17HS4023: 1.8 deg/step, 1.0 A/phase, 4.1 ohm/phase.
- * The A4988 runs from 12 V on VMOT with the 100 uF capacitor fitted;
- * its VDD logic rail takes 5 V. STEP/DIR/EN are driven at 3.3 V, which
- * is fine — the A4988's logic-high threshold is 2.0 V.
+ *
+ * The driver is a DRV8825 rather than the A4988 this file originally
+ * assumed. It is pin-compatible on STEP/DIR/ENABLE, so nothing here
+ * changes because of the swap — but the current limit is set by a
+ * different formula and the microstep DIP table differs. Neither is a
+ * devicetree concern.
+ *
+ * Current limit: on a DRV8825, I = Vref x 2, so the motor's rated 1.0 A
+ * would be Vref = 0.50 V. This board is currently set to 0.23 V (~0.46 A),
+ * which is what the conservative step interval in stepper.c assumes. If you
+ * change one, change the other — see the STEP_INTERVAL_NS comment.
+ *
+ * The driver runs from 12 V on VMOT with the 100 uF capacitor fitted.
+ * STEP/DIR/EN are driven at 3.3 V, which is fine — the DRV8825's
+ * logic-high threshold is 2.2 V.
  *
  * NOTE ON ZEPHYR VERSION: this uses the post-v4.4 stepper API, where
  * step-gpios/dir-gpios live on a separate motion-controller node rather
@@ -20,7 +32,24 @@
 / {
 	stepper_ctrl: motion-controller {
 		compatible = "zephyr,gpio-step-dir-stepper-ctrl";
-		step-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
+		/*
+		 * STEP is on GPIO 1, NOT GPIO 2.
+		 *
+		 * This overlay was written when SYNC0 lived on GPIO 21. That
+		 * pin turned out to be unusable as an input on this board, so
+		 * SYNC0 moved to GPIO 2 (see app.overlay) — which collided
+		 * with the STEP pin chosen here. Losing the distributed clock
+		 * to drive a stepper would be an absurd trade on an EtherCAT
+		 * node, so STEP moved instead.
+		 *
+		 * GPIO 1 is free ONLY because this overlay and sg90.overlay are
+		 * mutually exclusive — fw.sh applies one or the other. The SG90
+		 * overlay still pinmuxes GPIO 1 as LEDC_CH0, so applying both
+		 * would hand the pin to the PWM peripheral and silently mux
+		 * STEP away, with main.c preferring the servo branch and the
+		 * stepper never moving. Do not merge the two overlays.
+		 */
+		step-gpios = <&gpio0 1 GPIO_ACTIVE_HIGH>;
 		dir-gpios = <&gpio0 17 GPIO_ACTIVE_HIGH>;
 
 		/*
@@ -38,7 +67,7 @@
 	};
 
 	/*
-	 * A4988 ENABLE is active low. Held as a plain GPIO rather than a
+	 * DRV8825 ENABLE is active low. Held as a plain GPIO rather than a
 	 * driver property so the app can release the motor when idle —
 	 * an energised stepper holds torque and gets hot doing nothing.
 	 */
@@ -47,7 +76,7 @@
 
 		stepper_en_gpio: stepper_en_gpio {
 			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
-			label = "A4988 ENABLE";
+			label = "DRV8825 ENABLE";
 		};
 	};
 

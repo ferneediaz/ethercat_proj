@@ -49,6 +49,7 @@ target_sources(app PRIVATE
   src/ax58100.c
   src/diag.c
   src/servo.c
+  src/stepper.c
   src/ecat_slave.c
   src/sync0.c
 )

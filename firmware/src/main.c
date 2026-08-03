@@ -17,6 +17,7 @@
 #include "soes_app.h"
 #endif
 #include "servo.h"
+#include "stepper.h"
 #include "sync0.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
@@ -86,6 +87,37 @@ static void hint_on_total_failure(void)
 }
 
 /*
+ * Actuator dispatch.
+ *
+ * Exactly one of the two overlays is applied at a time, and the one that is
+ * not compiles down to stubs that report absent. So these pick whichever is
+ * really there, and the EtherCAT side never learns which actuator it is
+ * driving — that was the point of taking the apply function as a callback.
+ */
+static bool actuator_present(void)
+{
+	return servo_present() || stepper_present();
+}
+
+static int actuator_init(void)
+{
+	return servo_present() ? servo_init() : stepper_init();
+}
+
+/* Adapter: the actuator API returns an error code, the slave callback does
+ * not. A failed write is already logged by servo.c or stepper.c, and there is
+ * nothing useful the state machine could do about it mid-cycle — dropping to
+ * SAFEOP because one frame's update did not take would be worse than holding. */
+static void apply_target_angle(uint16_t degrees)
+{
+	if (servo_present()) {
+		(void)servo_set_angle(degrees);
+	} else {
+		(void)stepper_set_angle(degrees);
+	}
+}
+
+/*
  * Step to the three angles that matter first, holding each long enough to
  * see and measure, then sweep continuously.
  *
@@ -94,13 +126,13 @@ static void hint_on_total_failure(void)
  * or pulse-width problem, and that is far easier to spot against a held
  * angle than in the middle of a continuous sweep.
  */
-static void servo_demo(void)
+static void actuator_demo(void)
 {
 	static const uint16_t steps[] = {90, 0, 90, 180, 90};
 
 	for (size_t i = 0; i < ARRAY_SIZE(steps); i++) {
-		LOG_INF("servo -> %u deg", steps[i]);
-		servo_set_angle(steps[i]);
+		LOG_INF("actuator -> %u deg", steps[i]);
+		apply_target_angle(steps[i]);
 		k_sleep(K_MSEC(1200));
 	}
 
@@ -111,7 +143,7 @@ static void servo_demo(void)
 	int ticks = 0;
 
 	while (1) {
-		servo_set_angle(angle);
+		apply_target_angle(angle);
 
 		if (angle == 180) {
 			step = -2;
@@ -130,15 +162,6 @@ static void servo_demo(void)
 		}
 		k_sleep(K_MSEC(20));
 	}
-}
-
-/* Adapter: the actuator API returns an error code, the slave callback does
- * not. A failed PWM write is already logged by servo.c, and there is nothing
- * useful the state machine could do about it mid-cycle — dropping to SAFEOP
- * because one frame's pulse did not take would be worse than holding. */
-static void apply_servo_angle(uint16_t degrees)
-{
-	(void)servo_set_angle(degrees);
 }
 
 int main(void)
@@ -195,10 +218,18 @@ int main(void)
 		 * the bus ignored entirely. Diagnostic only: it separates a
 		 * broken actuator from a broken slave stack.
 		 */
-		if (servo_present() && servo_init() == 0) {
-			servo_demo();
+		if (!actuator_present()) {
+			LOG_ERR("CONFIG_SERVO_LOCAL_SWEEP set but no actuator "
+				"overlay applied — build with sg90 or nema17.");
+		} else if (actuator_init() != 0) {
+			/* The actuator itself has already logged why. Saying
+			 * "no actuator present" here would send the operator
+			 * to check the overlay, which is the wrong place. */
+			LOG_ERR("Actuator is configured but failed to "
+				"initialise; see the error above.");
+		} else {
+			actuator_demo();
 		}
-		LOG_ERR("CONFIG_SERVO_LOCAL_SWEEP set but no actuator present.");
 		return 0;
 	}
 
@@ -206,7 +237,8 @@ int main(void)
 		/* Hands the AL state machine, the CoE mailbox and the PDO
 		 * mapping to SOES. Never returns. */
 #if defined(CONFIG_ESC_USE_SOES)
-		soes_app_run(servo_present() ? apply_servo_angle : NULL);
+		soes_app_run(actuator_present() && actuator_init() == 0
+				     ? apply_target_angle : NULL);
 #endif
 		return 0;
 	}
@@ -219,10 +251,21 @@ int main(void)
 	 * time, and the working counter it checks only increments when we
 	 * have actually read the outputs and written the inputs.
 	 */
-	if (servo_present()) {
-		servo_init();
+	/*
+	 * Only hand the apply callback to the slave stack if the actuator
+	 * really came up. A stepper whose init failed rejects every move with
+	 * -EINVAL and logs once per PDO cycle — and with CONFIG_LOG_MODE_IMMEDIATE
+	 * that is a synchronous console write inside the 10 ms loop, which
+	 * overruns the cycle and drops the slave out of OP. The bus then looks
+	 * broken when the actual fault is a GPIO that would not configure.
+	 */
+	bool actuator_ok = actuator_present() && actuator_init() == 0;
+
+	if (actuator_present() && !actuator_ok) {
+		LOG_ERR("Actuator init failed — running as a slave with no "
+			"motion. The bus stays healthy; see the error above.");
 	}
-	if (ecat_slave_init(servo_present() ? apply_servo_angle : NULL) != 0) {
+	if (ecat_slave_init(actuator_ok ? apply_target_angle : NULL) != 0) {
 		return 0;
 	}
 	if (sync0_present() && sync0_init() != 0) {

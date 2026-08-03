@@ -44,7 +44,7 @@ config ESC_DC_SYNC
 
 config ESC_USE_SOES
 	bool "Use the SOES slave stack instead of the built-in minimal slave"
-	default n
+	default y
 	help
 	  Runs OpenEtherCATsociety/SOES (fetched at configure time by
 	  firmware/CMakeLists.txt, pinned by commit — not vendored) in place of
@@ -54,8 +54,16 @@ config ESC_USE_SOES
 
 	  SOES additionally provides a CoE mailbox with SDO access, which the
 	  minimal slave has none of, and is the natural foundation for CiA 402.
-	  It costs a large external dependency for a node that exchanges four
-	  bytes, which is why it is not the default.
+	  That mailbox is why it is now the default: the module's EEPROM already
+	  declares SM0/SM1 at 0x1000/0x1080, so a real object dictionary costs
+	  nothing but code, and adding one to the minimal slave would mean
+	  writing an SDO up/download state machine from scratch.
+
+	  Turn it off (./scripts/fw.sh build nema17 legacy) to run the
+	  hand-written stack instead. It stays supported and tested — it is
+	  smaller, has no external dependency, and every line of it is ours,
+	  which makes it the better thing to read when explaining how an AL
+	  state machine actually works.
 
 	  Configuration lives in firmware/soes/ecat_options.h and must match the
 	  module's EEPROM exactly.

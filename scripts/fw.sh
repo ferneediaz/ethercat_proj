@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Build / flash / monitor the ESP32-S3 host firmware.
 #
-#   ./scripts/fw.sh build            # milestone 4a, no motor
-#   ./scripts/fw.sh build sg90       # with the servo overlay
-#   ./scripts/fw.sh build nema17     # with the stepper overlay
+#   ./scripts/fw.sh build                  # milestone 4a, no motor
+#   ./scripts/fw.sh build sg90             # with the servo overlay
+#   ./scripts/fw.sh build nema17           # with the stepper overlay
+#   ./scripts/fw.sh build nema17 legacy    # hand-written slave, not SOES
 #   ./scripts/fw.sh flash
 #   ./scripts/fw.sh monitor
+#
+# The slave stack defaults to SOES (CONFIG_ESC_USE_SOES=y). Passing
+# `legacy` as the third argument builds firmware/src/ecat_slave.c instead.
+# Both present identical process data, so the master cannot tell them
+# apart — which is exactly what makes the comparison worth keeping.
 #
 # Runs on the Mac — that is where the USB-C port is. The Pi keeps
 # running the EtherCAT master over SSH, unchanged.
@@ -31,6 +37,16 @@ export PATH="$ZEPHYR_WS/.venv/bin:$PATH"
 
 cmd="${1:-build}"
 actuator="${2:-none}"
+stack="${3:-soes}"
+
+case "$stack" in
+soes)   soes_flag="y" ;;
+legacy) soes_flag="n" ;;
+*)
+	echo "Unknown stack '$stack' (want: soes, legacy)" >&2
+	exit 1
+	;;
+esac
 
 case "$actuator" in
 none)   overlay="" ;;
@@ -55,11 +71,12 @@ build)
 	# -p always: switching overlays without a pristine build silently
 	# reuses the previous devicetree, which looks like the overlay had
 	# no effect and wastes a lot of time.
-	args=(build -b "$BOARD" "$REPO/firmware" -p always)
+	args=(build -b "$BOARD" "$REPO/firmware" -p always --)
 	if [ -n "$overlay" ]; then
-		args+=(-- "-DEXTRA_DTC_OVERLAY_FILE=$overlay")
+		args+=("-DEXTRA_DTC_OVERLAY_FILE=$overlay")
 	fi
-	echo "Building for $BOARD (actuator: $actuator)"
+	args+=("-DCONFIG_ESC_USE_SOES=$soes_flag")
+	echo "Building for $BOARD (actuator: $actuator, stack: $stack)"
 	"$WEST" "${args[@]}"
 	;;
 flash)

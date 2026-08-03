@@ -1,21 +1,28 @@
 /*
  * Actuator overlay: NEMA 17 stepper via a DRV8825 (phase 6).
  *
- *   west build -b esp32s3_devkitc/esp32s3/procpu firmware \
- *       -- -DEXTRA_DTC_OVERLAY_FILE=overlays/nema17.overlay
+ *   ./scripts/fw.sh build nema17
+ *
+ * ONE ACTUATOR OVERLAY PER BUILD. This overlay and overlays/sg90.overlay
+ * are alternatives, never a pair: both claim GPIO 1 (here for STEP, there
+ * for the LEDC PWM output), so in a combined build the pin controller
+ * would quietly win and the stepper would never move. fw.sh applies
+ * exactly one and builds pristine (-p always); src/main.c carries a
+ * BUILD_ASSERT that fails the build if both ever appear at once.
  *
  * Motor 17HS4023: 1.8 deg/step, 1.0 A/phase, 4.1 ohm/phase.
  *
  * The driver is a DRV8825 rather than the A4988 this file originally
  * assumed. It is pin-compatible on STEP/DIR/ENABLE, so nothing here
  * changes because of the swap — but the current limit is set by a
- * different formula and the microstep DIP table differs. Neither is a
- * devicetree concern.
+ * different formula and the microstep DIP table differs.
  *
- * Current limit: on a DRV8825, I = Vref x 2, so the motor's rated 1.0 A
- * would be Vref = 0.50 V. This board is currently set to 0.23 V (~0.46 A),
- * which is what the conservative step interval in stepper.c assumes. If you
- * change one, change the other — see the STEP_INTERVAL_NS comment.
+ * CURRENT LIMIT: on the DRV8825 with 0.1 ohm sense resistors Vref is half
+ * the per-phase current, so the 0.46 A this axis is tuned for means
+ * Vref = 0.23 V on the trimpot. That is deliberately below the motor's
+ * 1.0 A rating — the load is a pointer, not a machine axis, and a cooler
+ * driver is worth more than torque nothing needs. step-interval-ns below
+ * is chosen for that 0.46 A: raise the current before raising the rate.
  *
  * The driver runs from 12 V on VMOT with the 100 uF capacitor fitted.
  * STEP/DIR/EN are driven at 3.3 V, which is fine — the DRV8825's
@@ -38,16 +45,11 @@
 		 * This overlay was written when SYNC0 lived on GPIO 21. That
 		 * pin turned out to be unusable as an input on this board, so
 		 * SYNC0 moved to GPIO 2 (see app.overlay) — which collided
-		 * with the STEP pin chosen here. Losing the distributed clock
-		 * to drive a stepper would be an absurd trade on an EtherCAT
-		 * node, so STEP moved instead.
-		 *
-		 * GPIO 1 is free ONLY because this overlay and sg90.overlay are
-		 * mutually exclusive — fw.sh applies one or the other. The SG90
-		 * overlay still pinmuxes GPIO 1 as LEDC_CH0, so applying both
-		 * would hand the pin to the PWM peripheral and silently mux
-		 * STEP away, with main.c preferring the servo branch and the
-		 * stepper never moving. Do not merge the two overlays.
+		 * with the STEP pin chosen here. GPIO 1 is free in a stepper
+		 * build because its only other claimant is the SG90 PWM in
+		 * sg90.overlay, which is never applied alongside this file.
+		 * Losing the distributed clock to drive a stepper would be an
+		 * absurd trade on an EtherCAT node.
 		 */
 		step-gpios = <&gpio0 1 GPIO_ACTIVE_HIGH>;
 		dir-gpios = <&gpio0 17 GPIO_ACTIVE_HIGH>;
@@ -67,21 +69,38 @@
 	};
 
 	/*
-	 * DRV8825 ENABLE is active low. Held as a plain GPIO rather than a
-	 * driver property so the app can release the motor when idle —
-	 * an energised stepper holds torque and gets hot doing nothing.
+	 * The axis: everything src/stepper.c needs in order to turn a
+	 * commanded angle into microsteps. None of it is compiled into the C,
+	 * so swapping the motor, moving the DIP switches or retuning the step
+	 * rate is an edit to this node alone.
 	 */
-	stepper_enable: stepper-enable {
-		compatible = "gpio-leds";
+	stepper_axis: stepper-axis {
+		compatible = "stepper-axis";
+		controller = <&stepper_ctrl>;
 
-		stepper_en_gpio: stepper_en_gpio {
-			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
-			label = "DRV8825 ENABLE";
-		};
+		/*
+		 * DRV8825 ENABLE is active low, and is held here as a plain
+		 * GPIO rather than handed to a driver so that energising the
+		 * motor stays the application's decision. GPIO_ACTIVE_LOW is
+		 * what makes "logically active" mean "energised" in the code.
+		 */
+		enable-gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+
+		/* 1.8 deg/step motor; DIP switches all OFF = full step. */
+		full-steps-per-revolution = <200>;
+		microstep-factor = <1>;
+
+		/*
+		 * 2.5 ms between steps = 400 steps/s, a full 180 degree sweep
+		 * in a quarter of a second. Deliberately conservative — see
+		 * the current-limit note at the top of this file.
+		 */
+		step-interval-ns = <2500000>;
+
+		max-angle = <180>;
 	};
 
 	aliases {
-		stepper-ctrl = &stepper_ctrl;
-		stepper-enable = &stepper_en_gpio;
+		actuator-stepper = &stepper_axis;
 	};
 };

@@ -21,21 +21,37 @@ LOG_MODULE_REGISTER(soes_app, LOG_LEVEL_INF);
 _Objects Obj;
 
 static soes_apply_fn apply_angle;
-static uint16_t last_logged = 0xffff;
+
+/*
+ * Last target actually handed to the actuator. 0xffff is a sentinel outside
+ * the commandable range, so the first delivery of any angle — including 0 —
+ * always gets through.
+ */
+#define NO_ANGLE_APPLIED 0xffffu
+static uint16_t last_applied = NO_ANGLE_APPLIED;
 
 /*
  * Outputs have arrived from the master. In SAFEOP SOES clears them rather
  * than delivering stale data, so this is only meaningful in OP — which is
  * precisely the guarantee SAFEOP exists to give.
+ *
+ * Driven on change only. Re-commanding an unchanged target every cycle looks
+ * free but is not: a stepper's motion controller re-arms its timing source and
+ * emits a STEP edge on each call, chopping the pulses of any move that spans
+ * more than one cycle and losing steps that this board has no encoder to
+ * notice. A servo's PWM is latched in hardware and needs no rewriting either.
  */
 void cb_set_outputs(void)
 {
 	uint16_t target = Obj.Outputs.target_angle;
 
-	if (target != last_logged) {
-		LOG_INF("target %u deg", target);
-		last_logged = target;
+	if (target == last_applied) {
+		return;
 	}
+
+	LOG_INF("target %u deg", target);
+	last_applied = target;
+
 	if (apply_angle != NULL) {
 		apply_angle(target);
 	}
@@ -83,6 +99,7 @@ void soes_app_run(soes_apply_fn apply)
 	};
 
 	apply_angle = apply;
+	last_applied = NO_ANGLE_APPLIED;
 
 	LOG_INF("starting SOES");
 	ecat_slv_init(&config);

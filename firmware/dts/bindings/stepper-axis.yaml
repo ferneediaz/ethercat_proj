@@ -1,0 +1,72 @@
+# Angle-commanded stepper axis.
+#
+# Zephyr's stepper API is expressed in microsteps; this project commands
+# actuators in degrees so that the PDO layout, the master's CLI and
+# master/src/angle.c are identical whichever actuator is fitted. The
+# translation needs to know the mechanics, and none of it belongs in C:
+# a different motor, a different microstep DIP setting or a different
+# driver changes these numbers without changing a line of code.
+#
+# This node describes the axis. The pulse generation itself belongs to
+# the motion controller pointed at by `controller`.
+
+description: Stepper axis commanded in degrees.
+
+compatible: "stepper-axis"
+
+include: base.yaml
+
+properties:
+  controller:
+    required: true
+    type: phandle
+    description: |
+      The step/dir motion controller that generates the pulses, e.g. a
+      zephyr,gpio-step-dir-stepper-ctrl node.
+
+  enable-gpios:
+    type: phandle-array
+    description: |
+      Driver ENABLE line, if it is under software control. Declare the
+      flags so that "active" means "motor energised" — on a DRV8825 or an
+      A4988 the pin is nENABLE, so that is GPIO_ACTIVE_LOW.
+
+      Optional: on a board that ties ENABLE to ground the axis still
+      works, it simply cannot ever release the motor.
+
+  full-steps-per-revolution:
+    required: true
+    type: int
+    description: |
+      Full steps per output revolution, from the motor datasheet. A 1.8
+      degree/step motor such as the 17HS4023 gives 200.
+
+  microstep-factor:
+    type: int
+    default: 1
+    description: |
+      Microsteps per full step, as selected on the driver. 1 is full-step.
+
+      This MUST agree with however the driver is actually configured. On a
+      board where microstepping is set by DIP switches there is no way to
+      read the setting back, so the two are kept in agreement by hand — and
+      a mismatch fails silently, with every commanded angle wrong by this
+      factor while the motor turns smoothly and reports no error.
+
+  step-interval-ns:
+    required: true
+    type: int
+    description: |
+      Time between microsteps, in nanoseconds; the reciprocal of the step
+      rate. Bounded below by the motor's pull-in rate at the current limit
+      actually set on the driver: an under-driven stepper skips steps when
+      accelerated hard, and with no encoder on the shaft a skipped step is
+      silent and permanent.
+
+  max-angle:
+    type: int
+    default: 180
+    description: |
+      Largest commandable angle in degrees, measured from the position the
+      shaft happened to be in at boot. Targets above this are clamped, the
+      same contract as the servo and as angle_clamp() on the master side.

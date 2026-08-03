@@ -7,9 +7,14 @@
  *   ./scripts/fw.sh build nema17
  *
  * Without the overlay stepper_present() is false and the other calls are
- * no-ops, exactly as servo.h behaves without the sg90 overlay. The two are
- * mutually exclusive in practice — one overlay or the other — but nothing
- * here breaks if both are absent.
+ * no-ops, exactly as servo.h behaves without the sg90 overlay. Exactly one
+ * actuator overlay is applied per build — they contend for GPIO 1, and
+ * main.c has a BUILD_ASSERT that rejects an image containing both.
+ *
+ * The mechanics live entirely in the devicetree (`stepper-axis` node, see
+ * dts/bindings/stepper-axis.yaml): steps per revolution, microstepping, step
+ * rate and the angle limit are all properties, so a different motor or a
+ * different DIP switch setting never touches this code.
  *
  * The interface deliberately mirrors servo.h. Both actuators are commanded
  * in degrees so the PDO layout, the master's CLI and angle.c are unchanged
@@ -29,23 +34,31 @@ bool stepper_present(void);
  * driver. Returns 0 on success, negative errno otherwise, and 0 (nothing to
  * do) when no stepper is configured.
  *
+ * MUST succeed before stepper_set_angle() is worth calling: the step interval
+ * is programmed here, and without it the controller rejects every move with
+ * -EINVAL. Callers are expected to check the return and stop wiring the
+ * actuator up rather than command an axis that will only log errors.
+ *
  * Zeroing matters: a stepper has no absolute position sense, so wherever the
  * shaft happens to be at boot becomes 0 degrees by definition. Homing against
  * a limit switch is what a real axis would do; this project has no switch, so
- * the convention is documented rather than solved.
+ * the convention is documented rather than solved. The motor is then left
+ * energised to defend that zero — see the comment in stepper_init().
  */
 int stepper_init(void);
 
 /*
- * Move to an angle in degrees. Values outside 0..180 are clamped rather than
- * rejected — the same contract as servo_set_angle() and angle_clamp() on the
- * master side, so an out-of-range PDO value parks at an end stop instead of
- * dropping the update.
+ * Move to an angle in degrees. Values above the axis's max-angle property are
+ * clamped rather than rejected — the same contract as servo_set_angle() and
+ * angle_clamp() on the master side, so an out-of-range PDO value parks at an
+ * end stop instead of dropping the update.
  *
  * Returns immediately: the controller pulses STEP in the background and the
- * call does not block until the move completes. A new target arriving mid-move
- * supersedes the old one, which is the behaviour a cyclic 10 ms PDO update
- * needs.
+ * call does not block until the move completes. A genuinely new target
+ * arriving mid-move supersedes the old one, which is the behaviour a cyclic
+ * PDO update needs; a repeat of the target already in flight is dropped,
+ * because re-arming the controller mid-pulse can cost a step that nothing
+ * downstream would notice was lost.
  */
 int stepper_set_angle(uint16_t degrees);
 

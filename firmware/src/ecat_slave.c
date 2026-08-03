@@ -34,6 +34,17 @@ static uint8_t cur_state = ESC_AL_INIT;
 static ecat_apply_fn apply_angle;
 static uint16_t last_angle;
 
+/*
+ * False until an output value has actually been applied in the current spell
+ * in OP. Cleared on every exit from OP so that re-entering re-applies even if
+ * the master resends the angle we were already holding — after a bus drop the
+ * shaft may not be where last_angle says any more.
+ *
+ * Without this, gating on `target != last_angle` alone would swallow the very
+ * first command of a session whenever it happened to be 0.
+ */
+static bool angle_applied;
+
 const char *ecat_state_name(uint8_t state)
 {
 	switch (state & ESC_AL_STATE_MASK) {
@@ -59,6 +70,13 @@ static void report_state(uint8_t state)
 
 	esc_write(ESC_REG_AL_STATUS, &v, sizeof(v));
 	cur_state = state;
+
+	/* Any state but OP means the outputs are not ours to apply. Forget that
+	 * we ever applied one, so the first command after coming back into OP
+	 * is delivered even if it repeats the angle we left off holding. */
+	if (state != ESC_AL_OP) {
+		angle_applied = false;
+	}
 }
 
 /*
@@ -132,7 +150,16 @@ static bool enter_safeop(void)
  * so an operator can watch a slave's feedback before it is allowed to move.
  *
  * The read of SM3 is also what increments the working counter the master
- * checks, so this has to run every cycle even when nothing has changed.
+ * checks, so the exchange has to run every cycle even when nothing has
+ * changed.
+ *
+ * The actuator, though, is driven only on change. Re-commanding an unchanged
+ * target every cycle is not the harmless no-op it looks like: a stepper's
+ * motion controller re-arms its timing source and emits a STEP edge on every
+ * call, so a move spanning several cycles gets its pulses chopped and loses
+ * steps that nothing on this board can detect. A servo's PWM is latched in
+ * hardware and does not need rewriting either. Applying on change is both
+ * correct and cheaper.
  */
 static void exchange_process_data(void)
 {
@@ -142,11 +169,11 @@ static void exchange_process_data(void)
 	if (esc_read(sm_out.addr, out, sizeof(out)) == 0) {
 		uint16_t target = (uint16_t)(out[0] | (out[1] << 8));
 
-		if (cur_state == ESC_AL_OP) {
-			if (target != last_angle) {
-				LOG_INF("target %u deg", target);
-				last_angle = target;
-			}
+		if (cur_state == ESC_AL_OP && (!angle_applied || target != last_angle)) {
+			LOG_INF("target %u deg", target);
+			last_angle = target;
+			angle_applied = true;
+
 			if (apply_angle != NULL) {
 				apply_angle(target);
 			}
@@ -166,6 +193,7 @@ int ecat_slave_init(ecat_apply_fn apply)
 {
 	apply_angle = apply;
 	last_angle = 0;
+	angle_applied = false;
 	report_state(ESC_AL_INIT);
 	LOG_INF("EtherCAT slave ready, state INIT");
 	return 0;
@@ -188,7 +216,7 @@ void ecat_slave_poll(void)
 		switch (req) {
 		case ESC_AL_INIT:
 		case ESC_AL_PREOP:
-			/* Nothing to tear down: the servo keeps its last
+			/* Nothing to tear down: the actuator holds its last
 			 * position rather than snapping to zero, which is
 			 * what an operator expects when a bus drops. */
 			report_state(req);

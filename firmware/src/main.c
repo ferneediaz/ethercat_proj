@@ -8,6 +8,7 @@
  *
  * Do not add SOES until this passes.
  */
+#include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -89,11 +90,22 @@ static void hint_on_total_failure(void)
 /*
  * Actuator dispatch.
  *
- * Exactly one of the two overlays is applied at a time, and the one that is
- * not compiles down to stubs that report absent. So these pick whichever is
- * really there, and the EtherCAT side never learns which actuator it is
- * driving — that was the point of taking the apply function as a callback.
+ * Exactly one actuator overlay is applied per build, and the one that is not
+ * compiles down to stubs that report absent. So these pick whichever is really
+ * there, and the EtherCAT side never learns which actuator it is driving —
+ * that was the point of taking the apply function as a callback.
+ *
+ * The two overlays are alternatives rather than a pair, and not only by
+ * convention: sg90.overlay drives GPIO 1 from the LEDC peripheral and
+ * nema17.overlay uses the same pin for STEP. Applying both would hand the pin
+ * to the pin controller and leave the stepper silently motionless, so reject
+ * that image at build time instead of debugging it on a bench.
  */
+BUILD_ASSERT(!(DT_NODE_HAS_STATUS(DT_ALIAS(actuator_servo), okay) &&
+	       DT_NODE_HAS_STATUS(DT_ALIAS(actuator_stepper), okay)),
+	     "Both actuator overlays are applied; they contend for GPIO 1. "
+	     "Build one actuator at a time: ./scripts/fw.sh build sg90|nema17");
+
 static bool actuator_present(void)
 {
 	return servo_present() || stepper_present();
@@ -115,6 +127,36 @@ static void apply_target_angle(uint16_t degrees)
 	} else {
 		(void)stepper_set_angle(degrees);
 	}
+}
+
+/*
+ * Bring the actuator up once, before either slave stack starts, and decide
+ * whether it is fit to be driven.
+ *
+ * Returning NULL rather than the callback is the important part. An actuator
+ * whose init failed does not recover by being commanded: a stepper with no
+ * step interval programmed rejects every single move with -EINVAL, and the
+ * resulting LOG_ERR is a synchronous console write (CONFIG_LOG_MODE_IMMEDIATE)
+ * sitting inside the cyclic process-data loop. That blows the cycle budget and
+ * drops the slave out of OP, turning a motor fault into what looks like a bus
+ * fault. Better to run the bus honestly with no motion.
+ */
+static ecat_apply_fn actuator_bring_up(void)
+{
+	if (!actuator_present()) {
+		LOG_WRN("no actuator overlay applied — the bus will run without "
+			"motion. Build with ./scripts/fw.sh build sg90|nema17.");
+		return NULL;
+	}
+
+	int rc = actuator_init();
+
+	if (rc != 0) {
+		LOG_ERR("actuator present but init failed (%d) — running the bus "
+			"without motion rather than failing every cycle.", rc);
+		return NULL;
+	}
+	return apply_target_angle;
 }
 
 /*
@@ -233,12 +275,23 @@ int main(void)
 		return 0;
 	}
 
+	/*
+	 * One bring-up, shared by both slave stacks below.
+	 *
+	 * This deliberately sits above the SOES branch. Both paths previously
+	 * called actuator_init() themselves, which meant two places had to
+	 * agree on what a failed init means — and the consequence of getting
+	 * it wrong is not obvious: a stepper with no step interval programmed
+	 * rejects every move with -EINVAL, and the resulting per-cycle LOG_ERR
+	 * is a synchronous console write inside the process-data loop.
+	 */
+	ecat_apply_fn apply = actuator_bring_up();
+
 	if (IS_ENABLED(CONFIG_ESC_USE_SOES)) {
 		/* Hands the AL state machine, the CoE mailbox and the PDO
 		 * mapping to SOES. Never returns. */
 #if defined(CONFIG_ESC_USE_SOES)
-		soes_app_run(actuator_present() && actuator_init() == 0
-				     ? apply_target_angle : NULL);
+		soes_app_run(apply);
 #endif
 		return 0;
 	}
@@ -251,21 +304,7 @@ int main(void)
 	 * time, and the working counter it checks only increments when we
 	 * have actually read the outputs and written the inputs.
 	 */
-	/*
-	 * Only hand the apply callback to the slave stack if the actuator
-	 * really came up. A stepper whose init failed rejects every move with
-	 * -EINVAL and logs once per PDO cycle — and with CONFIG_LOG_MODE_IMMEDIATE
-	 * that is a synchronous console write inside the 10 ms loop, which
-	 * overruns the cycle and drops the slave out of OP. The bus then looks
-	 * broken when the actual fault is a GPIO that would not configure.
-	 */
-	bool actuator_ok = actuator_present() && actuator_init() == 0;
-
-	if (actuator_present() && !actuator_ok) {
-		LOG_ERR("Actuator init failed — running as a slave with no "
-			"motion. The bus stays healthy; see the error above.");
-	}
-	if (ecat_slave_init(actuator_ok ? apply_target_angle : NULL) != 0) {
+	if (ecat_slave_init(apply) != 0) {
 		return 0;
 	}
 	if (sync0_present() && sync0_init() != 0) {

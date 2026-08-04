@@ -489,9 +489,14 @@ bool ecat_to_op(void)
          }
          else
          {
+            /* Names the pin the firmware actually uses. This said GPIO 21
+             * for a long time after SYNC0 had been moved to GPIO 2, which is
+             * worse than saying nothing: it sends whoever is debugging to
+             * inspect a wire that is not there. GPIO 21 does not work as an
+             * input on this board — see firmware/overlays/nema17.overlay. */
             printf("  SYNC0 generation looks correct in the ESC. If the slave "
-                   "counts no edges,\n  suspect the wire: module pin 3 -> "
-                   "ESP32 GPIO 21.\n");
+                   "counts no edges,\n  suspect the wire: module header pin 3 "
+                   "-> ESP32 GPIO 2.\n");
          }
       }
       printf("The master's cycle will phase-lock to the bus clock; watch the "

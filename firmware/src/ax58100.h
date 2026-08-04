@@ -20,6 +20,24 @@
 #define ESC_REG_PDI_CONTROL 0x0140u/* expect 0x05 (SPI slave) */
 #define ESC_REG_ESC_CONFIG 0x0141u /* expect 0x0e (device emulation off) */
 #define ESC_REG_PDI_CONFIG 0x0150u /* expect 0x03 (mode 3, CS active low) */
+
+/*
+ * SyncManager watchdog status, register 0x0440, ETG.1000.4.
+ *
+ * Bit 0 is 1 while the watchdog is being fed and 0 once it has expired. That
+ * is the authoritative "is the master still there" signal on this hardware,
+ * and it is time-based — unlike SOES's own watchdog, which counts poll
+ * iterations and so means different things depending on how fast the loop
+ * happens to be running.
+ *
+ * The register address itself is not defined here: SOES already has it as
+ * ESCREG_WDSTATUS with a reader (ESC_WDstatus), and the master programs the
+ * divider and timeout. Only the bit meaning is ours to name.
+ *
+ * The EEPROM already enables the watchdog trigger bit on SM2 (F:00010064 in
+ * slaveinfo), so nothing has to be written to make this work.
+ */
+#define ESC_WD_STATUS_OK 0x01u /* bit 0: set while the watchdog is fed */
 /* AL state machine. Addresses per AX58100 datasheet v105 register map
  * (and ETG.1000): AL Control is what the master requests, AL Status is
  * what the slave reports back, AL Status Code carries the reason for a

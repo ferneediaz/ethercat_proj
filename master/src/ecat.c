@@ -346,10 +346,18 @@ void ecat_button_watch(int seconds)
    fflush(stdout);
 }
 
+/* Defined below, next to the other watchdog register handling. */
+static void ecat_arm_watchdog(void);
+
 bool ecat_to_op(void)
 {
    ec_config_map(&IOmap);
    ec_configdc();
+
+   /* After ec_config_map, because that is what programs the SyncManagers the
+    * watchdog guards; before SAFE_OP, so the slave is protected for its whole
+    * time carrying process data. */
+   ecat_arm_watchdog();
 
    printf("Waiting for all slaves to reach SAFE_OP...\n");
    ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
@@ -629,6 +637,314 @@ int64_t ecat_dc_correction(void)
    return -(delta / 100) - (integral / 20);
 }
 
+
+/*
+ * ESC watchdog registers, ETG.1000.4. Not defined by SOEM: ethercattype.h has
+ * ECT_REG_WDCNT (0x0442) and nothing else, and it is never referenced.
+ */
+#define ESC_REG_WD_DIVIDER 0x0400 /* 16-bit, in 40 ns units, minus 2 */
+#define ESC_REG_WD_TIME_SM 0x0420 /* 16-bit, in watchdog increments */
+#define ESC_REG_WD_STATUS 0x0440  /* 16-bit, bit 0: 1 = SM watchdog OK */
+
+/* One watchdog increment. The register counts 25 MHz ticks and the hardware
+ * adds 2, so the value written is (target / 40 ns) - 2. */
+#define WD_INCREMENT_NS 100000 /* 100 us */
+
+/* How many cycles the slave may miss before the watchdog trips. Ten is long
+ * enough that a single scheduling hiccup on a non-realtime kernel does not
+ * fault the bus, and short enough that a dead master is noticed inside a
+ * tenth of a second. */
+#define WD_MISSED_CYCLES 10
+
+/*
+ * Arm the ESC's SyncManager watchdog.
+ *
+ * Without this the slave has no way to notice the master vanishing: it goes on
+ * reading the last values left in DPRAM forever, and an axis mid-move holds
+ * its last target indefinitely. The EEPROM already enables the watchdog
+ * trigger bit on SM2 (F:00010064 in slaveinfo, see firmware/soes/
+ * ecat_options.h), so the mechanism is present and merely unconfigured.
+ *
+ * Both values are derived from ECAT_CYCLE_US rather than written as constants,
+ * so changing the cycle time cannot leave a watchdog tuned for the old one.
+ */
+static void ecat_arm_watchdog(void)
+{
+   uint16 adr = ec_slave[1].configadr;
+   uint16 divider = (uint16)((WD_INCREMENT_NS / 40) - 2);
+   uint32 timeout_ns = (uint32)ECAT_CYCLE_US * 1000u * WD_MISSED_CYCLES;
+   uint16 count = (uint16)(timeout_ns / WD_INCREMENT_NS);
+   uint16 status = 0;
+
+   ec_FPWR(adr, ESC_REG_WD_DIVIDER, sizeof(divider), &divider, EC_TIMEOUTRET);
+   ec_FPWR(adr, ESC_REG_WD_TIME_SM, sizeof(count), &count, EC_TIMEOUTRET);
+
+   /* Deliberately no status read here. The watchdog only starts running once
+    * process data is flowing, so 0x0440 reads 0 at this point whether the
+    * configuration took or not — the same trap as reading DC register 0x0984
+    * before the first SYNC0 pulse was due. See ecat_watchdog_report(). */
+   (void)status;
+   printf("SM watchdog armed: %u increments of %u ns = %u ms (%d missed "
+          "cycles at %d us)\n",
+          count, (unsigned)WD_INCREMENT_NS, (unsigned)(timeout_ns / 1000000u),
+          WD_MISSED_CYCLES, ECAT_CYCLE_US);
+}
+
+void ecat_watchdog_report(void)
+{
+   uint16 status = 0;
+
+   if (ec_slavecount < 1)
+   {
+      return;
+   }
+   if (ec_FPRD(ec_slave[1].configadr, ESC_REG_WD_STATUS, sizeof(status),
+               &status, EC_TIMEOUTRET) <= 0)
+   {
+      fprintf(stderr, "SM watchdog: could not read 0x0440.\n");
+      return;
+   }
+   printf("  0x0440 watchdog status 0x%4.4x -> %s\n", status,
+          (status & 0x0001)
+              ? "being fed, the slave is seeing our process data"
+              : "EXPIRED — the slave is NOT receiving process data");
+}
+
+/*
+ * Walk the bus down to a requested state, one transition at a time.
+ *
+ * ec_writestate() is fire-and-forget. The previous shutdown wrote INIT and
+ * closed the socket in the next statement, so whether the slave ever saw the
+ * request was down to timing — which is why a killed master left the slave
+ * stuck in OP, and the next ESP32 boot logged AL Status 0x11 with code 0x001d
+ * as it tried an illegal INIT->OP jump.
+ *
+ * Two things make this reliable. Process data keeps being exchanged while
+ * waiting, because a slave in OP that stops receiving frames faults on its
+ * watchdog instead of transitioning cleanly. And the descent goes one step at
+ * a time: OP->INIT in a single write is legal in the spec but leaves less to
+ * diagnose when a slave refuses, since there is no way to tell which of the
+ * three transitions it objected to.
+ */
+bool ecat_request_state(uint16 state)
+{
+   static const uint16 ladder[] = {EC_STATE_SAFE_OP, EC_STATE_PRE_OP,
+                                   EC_STATE_INIT};
+   bool ok = true;
+
+   if (ec_slavecount < 1)
+   {
+      return true;
+   }
+
+   for (size_t i = 0; i < sizeof(ladder) / sizeof(ladder[0]); i++)
+   {
+      uint16 step = ladder[i];
+
+      /* Skip rungs above where we already are, and stop once the caller's
+       * target has been reached. */
+      if (ec_slave[0].state < step && ec_slave[0].state != 0)
+      {
+         continue;
+      }
+
+      uint16 before = ec_slave[0].state;
+
+      ec_slave[0].state = step;
+      ec_writestate(0);
+
+      for (int t = 0; t < 50; t++)
+      {
+         ec_send_processdata();
+         ec_receive_processdata(EC_TIMEOUTRET);
+         if (ec_statecheck(0, step, 10000) == step)
+         {
+            break;
+         }
+      }
+      printf("  0x%2.2x -> 0x%2.2x: now 0x%2.2x\n", before, step,
+             ec_slave[0].state);
+
+      if (ec_slave[0].state != step)
+      {
+         fprintf(stderr,
+                 "Slave would not leave 0x%2.2x for 0x%2.2x (AL status code "
+                 "0x%4.4x %s).\n",
+                 ec_slave[0].state, step, ec_slave[1].ALstatuscode,
+                 ec_ALstatuscode2string(ec_slave[1].ALstatuscode));
+         ok = false;
+         break;
+      }
+      if (step == state)
+      {
+         break;
+      }
+   }
+   return ok;
+}
+
+
+/*
+ * Read AL Status without configuring anything.
+ *
+ * Every other command here goes through ecat_open(), which calls
+ * ec_config_init() — and that transitions every slave to PRE-OP as part of
+ * enumerating them. So the obvious way to check "did the slave end up in
+ * INIT?" cannot work: looking moves it to PRE-OP before you can see.
+ *
+ * This opens the raw socket and issues one broadcast read of 0x0130, which
+ * changes nothing. It is the only honest way to observe the state a previous
+ * master run left behind.
+ */
+int ecat_probe_al_state(const char *ifname)
+{
+   uint16 al = 0;
+   int wkc;
+
+   if (if_nametoindex(ifname) == 0)
+   {
+      fprintf(stderr, "No network interface named '%s'.\n", ifname);
+      return -1;
+   }
+   if (!ec_init(ifname))
+   {
+      fprintf(stderr, "ec_init on %s failed (need sudo?).\n", ifname);
+      return -1;
+   }
+
+   wkc = ec_BRD(0, ECT_REG_ALSTAT, sizeof(al), &al, EC_TIMEOUTRET);
+   ec_close();
+
+   if (wkc <= 0)
+   {
+      fprintf(stderr, "No slave answered the broadcast read.\n");
+      return -1;
+   }
+   al = etohs(al);
+   static const char *const names[] = {"?",      "INIT", "PREOP", "BOOT",
+                                       "SAFEOP", "?",    "?",     "?",
+                                       "OP"};
+   uint16 base = al & 0x000f;
+
+   printf("AL Status 0x%4.4x -> %s%s  [%d slave(s) answered]\n", al,
+          (base <= 8) ? names[base] : "?", (al & 0x0010) ? " +ERROR" : "",
+          wkc);
+   return (int)al;
+}
+
+
+/*
+ * Measure the SyncManager watchdog end to end.
+ *
+ * Brings the bus to OP, runs process data normally for a couple of seconds so
+ * the watchdog is being fed, then simply STOPS sending — without exiting, so
+ * the socket stays open and the slave can still be read. Polls AL Status and
+ * 0x0440 until the watchdog trips, and reports how long that took.
+ *
+ * Done in one process on purpose. The obvious alternative — kill the master
+ * and start a second tool to watch — puts two raw sockets on the same
+ * interface, each receiving the other's frames, which makes both unreliable.
+ * And polling with a broadcast read is safe here precisely because a BRD of
+ * 0x0130 does not write SM2, so watching does not feed the thing being watched.
+ */
+bool ecat_watchdog_test(void)
+{
+   const int feed_ms = 2000;
+   const int poll_us = 2000;
+   const int limit_ms = 5000;
+   uint16 adr;
+   uint16 al = 0, alcode = 0, wd = 0;
+   struct timespec t0, now;
+   double elapsed_ms = 0.0;
+
+   if (!ecat_to_op())
+   {
+      return false;
+   }
+   adr = ec_slave[1].configadr;
+
+   for (int i = 0; i < feed_ms / (ECAT_CYCLE_US / 1000); i++)
+   {
+      ecat_cycle();
+      osal_usleep(ECAT_CYCLE_US);
+   }
+
+   ec_FPRD(adr, ESC_REG_WD_STATUS, sizeof(wd), &wd, EC_TIMEOUTRET);
+   ec_FPRD(adr, 0x0130, sizeof(al), &al, EC_TIMEOUTRET);
+   printf("Fed for %d ms: AL 0x%4.4x, watchdog 0x%4.4x (%s)\n", feed_ms, al,
+          wd, (wd & 0x0001) ? "being fed" : "NOT running");
+
+   if (!(wd & 0x0001))
+   {
+      fprintf(stderr,
+              "Watchdog is not running even while process data flows — it "
+              "cannot be tested. Check that SM2 has the watchdog trigger bit "
+              "set (F:00010064 in slaveinfo).\n");
+      return false;
+   }
+
+   printf("Stopping process data now; waiting for the watchdog...\n");
+   clock_gettime(CLOCK_MONOTONIC, &t0);
+
+   bool tripped = false;
+
+   while (elapsed_ms < limit_ms)
+   {
+      osal_usleep(poll_us);
+      clock_gettime(CLOCK_MONOTONIC, &now);
+      elapsed_ms = (double)(now.tv_sec - t0.tv_sec) * 1000.0 +
+                   (double)(now.tv_nsec - t0.tv_nsec) / 1e6;
+
+      ec_FPRD(adr, ESC_REG_WD_STATUS, sizeof(wd), &wd, EC_TIMEOUTRET);
+      if (!(wd & 0x0001))
+      {
+         tripped = true;
+         break;
+      }
+   }
+
+   if (!tripped)
+   {
+      fprintf(stderr, "Watchdog did not trip within %d ms.\n", limit_ms);
+      return false;
+   }
+   printf("Watchdog tripped after %.1f ms (programmed %u ms).\n", elapsed_ms,
+          (unsigned)((uint32)ECAT_CYCLE_US * WD_MISSED_CYCLES / 1000u));
+
+   /*
+    * The AL state machine reacts much later than the ESC register, and the gap
+    * is the interesting part.
+    *
+    * The ESC's watchdog is hardware and time-based: it trips at the programmed
+    * interval. SOES's own watchdog counts POLL ITERATIONS (watchdog_cnt in
+    * soes_app.c), so what it means in seconds depends entirely on how fast the
+    * slave's loop happens to be running — which changes the moment SYNC0
+    * starts pacing it. Both are reported rather than only whichever fires
+    * first.
+    */
+   struct timespec tal;
+   double al_ms = 0.0;
+
+   for (int i = 0; i < 1200; i++)
+   {
+      osal_usleep(5000);
+      ec_FPRD(adr, 0x0130, sizeof(al), &al, EC_TIMEOUTRET);
+      if (al & 0x0010)
+      {
+         break;
+      }
+   }
+   clock_gettime(CLOCK_MONOTONIC, &tal);
+   al_ms = (double)(tal.tv_sec - t0.tv_sec) * 1000.0 +
+           (double)(tal.tv_nsec - t0.tv_nsec) / 1e6;
+   printf("Slave AL state reacted after %.0f ms (SOES counts poll iterations, "
+          "not time).\n", al_ms);
+   ec_FPRD(adr, 0x0134, sizeof(alcode), &alcode, EC_TIMEOUTRET);
+   printf("AL Status 0x%4.4x, AL Status Code 0x%4.4x (%s)\n", al, alcode,
+          ec_ALstatuscode2string(alcode));
+   return true;
+}
+
 void ecat_close(void)
 {
    if (ec_slavecount > 0)
@@ -642,8 +958,9 @@ void ecat_close(void)
          ec_dcsync0(1, FALSE, 0, 0);
          dc_active = false;
       }
-      ec_slave[0].state = EC_STATE_INIT;
-      ec_writestate(0);
+      /* Walk down properly and confirm each rung, rather than firing one
+       * write at INIT and closing the socket before the slave can act. */
+      (void)ecat_request_state(EC_STATE_INIT);
    }
    ec_close();
 }

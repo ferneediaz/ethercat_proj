@@ -11,6 +11,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "ax58100.h"
 #include "ecat_slv.h"
 #include "esc.h"
 #include "sync0.h"
@@ -145,6 +146,10 @@ void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 	int64_t next_beat = k_uptime_get() + 2000;
 	uint32_t last_edges = 0;
 	bool probed = false;
+	/* Starts true so the first transition logged is the interesting one:
+	 * before OP there is no process data and the watchdog is not running,
+	 * which is not a fault worth announcing. */
+	bool wd_ok = true;
 
 	while (1) {
 		/*
@@ -158,6 +163,50 @@ void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 		(void)sync0_pace();
 
 		ecat_slv();
+
+		/*
+		 * Watch the ESC's own SM watchdog alongside SOES's.
+		 *
+		 * SOES drops to SAFEOP with ALERR_WATCHDOG when its counter
+		 * expires, but that counter counts POLL ITERATIONS, so what it
+		 * means in seconds depends entirely on how fast this loop is
+		 * running — which changes the moment SYNC0 starts pacing it.
+		 * Register 0x0440 is time-based and programmed by the master,
+		 * so it is the honest answer to "how long was the master gone".
+		 *
+		 * SOES already has a reader for it (ESC_WDstatus, esc.c), which
+		 * nothing in this project called until now — no reason to add a
+		 * second path to the same register.
+		 *
+		 * Only meaningful in OP. The watchdog does not run until process
+		 * data is flowing, so outside OP it reads expired regardless —
+		 * the same trap as reading DC register 0x0984 before the first
+		 * SYNC0 pulse was due.
+		 *
+		 * Logged on the edge only. Polling it every cycle costs an SPI
+		 * transaction inside the DC-paced window, and the transition is
+		 * the only interesting part.
+		 */
+		if (ESCvar.ALstatus == ESCop) {
+			uint8_t wd = ESC_WDstatus();
+			bool ok = (wd & ESC_WD_STATUS_OK) != 0;
+
+			if (ok != wd_ok) {
+				wd_ok = ok;
+				LOG_WRN("ESC SM watchdog %s (0x0440 = 0x%02x)",
+					ok ? "fed again"
+					   : "EXPIRED — master has stopped "
+					     "sending process data",
+					(unsigned)wd);
+			}
+		} else {
+			/* Below OP there is no process data, so 0x0440 reads
+			 * expired and means nothing. Reporting it here would
+			 * announce "the master has stopped" on every boot,
+			 * before a master has ever connected. Reset the edge
+			 * detector so the first real transition still logs. */
+			wd_ok = true;
+		}
 
 		if (ESCvar.ALstatus != last_status ||
 		    ESCvar.ALerror != last_error) {

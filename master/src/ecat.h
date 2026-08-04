@@ -109,7 +109,59 @@ void ecat_gpio_probe(void);
  */
 void ecat_button_watch(int seconds);
 
-/* Release the interface. Safe to call at any time after ecat_open. */
+/*
+ * Bring the bus to OP, feed the watchdog for a while, then stop sending and
+ * time how long the SyncManager watchdog takes to trip. Reports the resulting
+ * AL Status and AL Status Code.
+ *
+ * Single process by design: killing the master and watching with a second
+ * tool would put two raw sockets on one interface, each seeing the other's
+ * frames. Polling here is a broadcast read, which does not write SM2 and so
+ * does not feed the watchdog being measured.
+ */
+bool ecat_watchdog_test(void);
+
+/*
+ * Read AL Status with a broadcast read and nothing else, then close.
+ *
+ * Needed because ecat_open() calls ec_config_init(), which transitions every
+ * slave to PRE-OP while enumerating. Any check of the form "what state did the
+ * last master run leave the slave in?" is therefore impossible through the
+ * normal path: opening the bus is what changes the answer.
+ *
+ * Returns the AL Status value, or -1 if nothing answered.
+ */
+int ecat_probe_al_state(const char *ifname);
+
+/*
+ * Read the ESC's SyncManager watchdog status while the bus is running.
+ *
+ * Must be called seconds into OP, not at arming time. The watchdog only counts
+ * once process data is flowing, so 0x0440 reads 0 immediately after it is
+ * configured whether or not the configuration took — exactly the trap that
+ * ecat_dc_report() exists to avoid for register 0x0984.
+ */
+void ecat_watchdog_report(void);
+
+/*
+ * Walk the bus down to `state`, one AL transition at a time, confirming each.
+ *
+ * ecat_close() calls this for INIT, which is the reason it exists: the old
+ * shutdown fired a single ec_writestate() at INIT and closed the socket in the
+ * next statement, so whether the slave ever saw the request came down to
+ * timing. A master that was killed left the slave sitting in OP, and the next
+ * time the slave's host rebooted it tried an illegal INIT->OP jump and logged
+ * AL Status 0x11 with status code 0x001d.
+ *
+ * Process data keeps flowing while waiting: a slave in OP that stops receiving
+ * frames trips its watchdog rather than transitioning cleanly.
+ *
+ * Returns true when the requested state was reached.
+ */
+bool ecat_request_state(uint16_t state);
+
+/* Release the interface. Brings the slave down to INIT first. Safe to call
+ * at any time after ecat_open. */
 void ecat_close(void);
 
 #endif /* ECAT_H */

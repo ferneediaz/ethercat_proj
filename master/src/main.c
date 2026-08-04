@@ -10,7 +10,7 @@
 
 static volatile sig_atomic_t stop_requested = 0;
 
-static void on_sigint(int sig)
+static void on_stop_signal(int sig)
 {
    (void)sig;
    stop_requested = 1;
@@ -23,6 +23,8 @@ static void usage(const char *prog)
            "Commands:\n"
            "  scan             list slaves and check the ASIX identity\n"
            "  regs             dump and decode the ESC configuration registers\n"
+           "  alstate          read AL Status without disturbing it\n"
+           "  wdtest           time the SM watchdog by stopping process data\n"
            "  gpio             identify the L1-L8 LEDs and SW1/SW2 buttons\n"
            "  buttons [secs]   watch every ESC input for SW1/SW2 (default 45s)\n"
            "  op               bring the slave to OP and hold (Ctrl-C to stop)\n"
@@ -123,6 +125,7 @@ static int run_loop(double sweep_period, uint16_t fixed_angle)
       {
          dc_reported = true;
          ecat_dc_report();
+         ecat_watchdog_report();
       }
 
       /* Ignore the first two seconds: the phase-locked loop starts wherever
@@ -284,7 +287,20 @@ int main(int argc, char *argv[])
    const char *ifname = argv[1];
    const char *cmd = argv[2];
 
-   signal(SIGINT, on_sigint);
+   /* SIGTERM and SIGHUP matter as much as SIGINT here: `timeout` sends
+    * SIGTERM and every scripted run in this project uses it, so handling only
+    * Ctrl-C meant the common case skipped the clean walk back to INIT and
+    * left the slave stranded in OP. */
+   /* Handled before ecat_open, because ecat_open would change the very
+    * thing this command exists to observe. */
+   if (strcmp(cmd, "alstate") == 0)
+   {
+      return ecat_probe_al_state(ifname) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+   }
+
+   signal(SIGINT, on_stop_signal);
+   signal(SIGTERM, on_stop_signal);
+   signal(SIGHUP, on_stop_signal);
 
    int slaves = ecat_open(ifname);
    if (slaves < 0)
@@ -339,6 +355,10 @@ int main(int argc, char *argv[])
       {
          rc = EXIT_FAILURE;
       }
+   }
+   else if (strcmp(cmd, "wdtest") == 0)
+   {
+      rc = ecat_watchdog_test() ? EXIT_SUCCESS : EXIT_FAILURE;
    }
    else if (strcmp(cmd, "move") == 0)
    {

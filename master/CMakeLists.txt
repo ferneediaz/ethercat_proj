@@ -7,8 +7,15 @@ add_compile_options(-Wall -Wextra)
 # Unit tests build anywhere (Mac or Pi) — no SOEM needed.
 add_executable(test_angle test/test_angle.c src/angle.c)
 target_link_libraries(test_angle m)
+
+# Tests firmware/src/step_math.h, which is header-only and free of Zephyr on
+# purpose so the one silent part of the stepper path can be checked without
+# hardware. See the comment at the top of that header.
+add_executable(test_step_math test/test_step_math.c)
+
 enable_testing()
 add_test(NAME angle COMMAND test_angle)
+add_test(NAME step_math COMMAND test_step_math)
 
 # The master app needs SOEM and Linux raw sockets — Pi only.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")

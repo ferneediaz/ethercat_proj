@@ -1,5 +1,7 @@
 #include "stepper.h"
 
+#include "step_math.h"
+
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/stepper/stepper_ctrl.h>
@@ -26,8 +28,6 @@ LOG_MODULE_REGISTER(stepper, LOG_LEVEL_INF);
 
 /* Microsteps per revolution: the unit the controller actually counts in. */
 #define STEPS_PER_REV ((uint32_t)FULL_STEPS_PER_REV * (uint32_t)MICROSTEP_FACTOR)
-
-#define DEGREES_PER_REV 360u
 
 BUILD_ASSERT(FULL_STEPS_PER_REV > 0, "full-steps-per-revolution must be positive");
 BUILD_ASSERT(MICROSTEP_FACTOR > 0, "microstep-factor must be at least 1 (1 = full step)");
@@ -96,13 +96,11 @@ bool stepper_present(void)
 	return true;
 }
 
-/* Degrees to microsteps, rounded to nearest rather than truncated. At full
- * step the quantisation is coarse enough (1.8 degrees) that always rounding
- * down would bias every commanded angle low by up to a whole step. */
+/* The arithmetic lives in step_math.h so it can be unit tested on the host,
+ * away from the devicetree and the motor. */
 static int32_t angle_to_steps(uint16_t degrees)
 {
-	return (int32_t)(((uint32_t)degrees * STEPS_PER_REV + DEGREES_PER_REV / 2u) /
-			 DEGREES_PER_REV);
+	return step_math_angle_to_steps(degrees, STEPS_PER_REV);
 }
 
 int stepper_init(void)
@@ -203,17 +201,9 @@ int stepper_set_angle(uint16_t degrees)
 	return 0;
 }
 
-/* Inverse of angle_to_steps(). Same rounding, so a value that went out as
- * N degrees comes back as N degrees rather than N-1. */
 static uint16_t steps_to_angle(int32_t steps)
 {
-	if (steps <= 0) {
-		return 0;
-	}
-	uint32_t deg = ((uint32_t)steps * DEGREES_PER_REV + STEPS_PER_REV / 2u) /
-		       STEPS_PER_REV;
-
-	return (uint16_t)MIN(deg, (uint32_t)max_angle_deg);
+	return step_math_steps_to_angle(steps, STEPS_PER_REV, max_angle_deg);
 }
 
 int stepper_actual_angle(uint16_t *degrees)

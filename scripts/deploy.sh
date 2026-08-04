@@ -12,11 +12,19 @@ echo "== Syncing master/ and scripts/ to $DEST:~/ethercat/ =="
 rsync -av --delete --exclude build "$REPO_DIR/master/" "$DEST:~/ethercat/master/"
 rsync -av "$REPO_DIR/scripts/" "$DEST:~/ethercat/scripts/"
 
+# The host test for the degrees<->microsteps arithmetic includes the firmware
+# header that owns it, so the Pi needs that one file even though it never
+# builds firmware. Syncing the header rather than duplicating the maths is the
+# whole point: a copy could drift from what the ESP32 actually runs, and the
+# test would then be checking the wrong thing while passing.
+ssh "$DEST" 'mkdir -p ~/ethercat/firmware/src'
+rsync -av "$REPO_DIR/firmware/src/step_math.h" "$DEST:~/ethercat/firmware/src/"
+
 echo "== Building on the Pi =="
 ssh "$DEST" 'cmake -S ~/ethercat/master -B ~/ethercat/master/build && cmake --build ~/ethercat/master/build -j$(nproc)'
 
 echo "== Running unit tests on the Pi =="
-ssh "$DEST" '~/ethercat/master/build/test_angle'
+ssh "$DEST" '~/ethercat/master/build/test_angle && ~/ethercat/master/build/test_step_math'
 
 echo
 echo "Done. Run the master with:"

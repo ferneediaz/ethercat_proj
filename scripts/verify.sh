@@ -252,6 +252,30 @@ check "read-only entry refused" $? "0x8000:03"
 
 mgrep OK "sdo write 0x8000 1 ${STEP_NS} 4"
 check "original interval restored" $? "${STEP_NS} ns"
+
+# Mailbox traffic while the bus is in OP. SDOs are blocking transactions and
+# the loop has a 10 ms budget behind a 100 ms watchdog, so this is a real
+# question. Sparse traffic is the realistic case: configuration is normally
+# done in PRE-OP, and an occasional read during operation is the exception.
+SDOOP="$(ssh "${PI}" "sudo timeout 40 ${MASTER#sudo } sdotest 10 20" 2>&1)"
+SD_LOW="$(printf '%s\n' "${SDOOP}" | sed -n 's/.*low_wkc=\([0-9]*\).*/\1/p')"
+SD_FAIL="$(printf '%s\n' "${SDOOP}" | sed -n 's/.*sdo_failed=\([0-9]*\).*/\1/p')"
+SD_N="$(printf '%s\n' "${SDOOP}" | sed -n 's/.*sdos=\([0-9]*\).*/\1/p')"
+SD_OP="$(printf '%s\n' "${SDOOP}" | grep -c 'still OP')"
+SD_DC="$(printf '%s\n' "${SDOOP}" | sed -n 's/.*worst DC phase error after settling: \([0-9]*\) ns.*/\1/p')"
+SD_CYC="$(printf '%s\n' "${SDOOP}" | sed -n 's/.*worst cycle \([0-9.]*\) ms.*/\1/p')"
+
+[ "${SD_LOW:-1}" = "0" ] && [ "${SD_FAIL:-1}" = "0" ] && [ "${SD_OP}" = "1" ]
+check "SDOs during OP keep the bus healthy" $? "${SD_N:-?} SDOs, low_wkc ${SD_LOW:-?}, failed ${SD_FAIL:-?}, still OP"
+
+# The honest part: mailbox traffic does NOT leave timing alone. An SDO blocks
+# the cyclic loop long enough to miss its deadline, and that shifts when the
+# frame lands relative to SYNC0. Measured on this bench: ~182 us worst phase
+# error with no SDOs, ~643 us with one every 20 cycles, and ~3.4 ms with one
+# every cycle. Sparse traffic is asserted to stay inside a tenth of the cycle;
+# doing it every cycle would fail this, correctly.
+[ -n "${SD_DC}" ] && [ "${SD_DC}" -lt 1000000 ]
+check "DC phase error stays under 1 ms with sparse SDOs" $? "${SD_DC:-?} ns, worst cycle ${SD_CYC:-?} ms vs 10 ms budget"
 fi
 
 # ===========================================================================

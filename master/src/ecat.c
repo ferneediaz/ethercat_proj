@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "ethercat.h"
 
@@ -1029,6 +1030,165 @@ bool ecat_sdo_write(uint16_t index, uint8_t sub, int size, int64_t value)
    printf("0x%4.4x:%2.2x <- %lld (%d byte%s) OK\n", index, sub,
           (long long)value, size, size == 1 ? "" : "s");
    return true;
+}
+
+
+
+/* Local copy of main.c's cycle sleep. Duplicated rather than exported because
+ * the alternative is a header dependency from ecat.c back up into the CLI, and
+ * this is six lines of absolute-deadline arithmetic. */
+static void cycle_sleep_ns(struct timespec *next, int64_t correction_ns)
+{
+   int64_t nsec = (int64_t)next->tv_nsec + (int64_t)ECAT_CYCLE_US * 1000 +
+                  correction_ns;
+
+   while (nsec >= 1000000000LL)
+   {
+      nsec -= 1000000000LL;
+      next->tv_sec += 1;
+   }
+   while (nsec < 0)
+   {
+      nsec += 1000000000LL;
+      next->tv_sec -= 1;
+   }
+   next->tv_nsec = (long)nsec;
+   clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, next, NULL);
+}
+
+/*
+ * Does mailbox traffic disturb process data?
+ *
+ * Everything else here does its SDO work in PRE-OP and exits, which leaves the
+ * interesting question unanswered: SDOs are blocking mailbox transactions, and
+ * this loop has a 10 ms budget and a 100 ms SyncManager watchdog. If an SDO
+ * takes longer than the budget the cycle is missed; if it takes longer than the
+ * watchdog the slave faults out of OP and the axis stops.
+ *
+ * So run the cyclic loop for real and inject SDOs into it, counting what that
+ * costs. One process, because a second tool on the same interface would put two
+ * raw sockets on one NIC and neither would be trustworthy.
+ *
+ * Reports the worst cycle overrun and whether the slave stayed in OP. A pass
+ * here means mailbox access during operation is safe on this hardware; a fail
+ * is worth knowing before relying on it.
+ */
+bool ecat_sdo_during_op(int seconds, int sdo_every_cycles)
+{
+   servo_outputs_t *out;
+   struct timespec next, t0, t1;
+   int cycles = 0, low_wkc = 0, sdos = 0, sdo_fail = 0;
+   double worst_sdo_ms = 0.0, worst_cycle_ms = 0.0;
+   int64_t worst_dc_ns = 0;
+   int64_t value = 0;
+
+   if (!ecat_to_op())
+   {
+      return false;
+   }
+   out = ecat_outputs();
+   if (out == NULL)
+   {
+      fprintf(stderr, "PDO mapping mismatch.\n");
+      return false;
+   }
+
+   printf("Running process data with an SDO every %d cycles for %d s...\n",
+          sdo_every_cycles, seconds);
+
+   clock_gettime(CLOCK_MONOTONIC, &next);
+   int total = seconds * (1000000 / ECAT_CYCLE_US);
+
+   for (int i = 0; i < total; i++)
+   {
+      struct timespec c0, c1;
+
+      clock_gettime(CLOCK_MONOTONIC, &c0);
+      out->target_angle = 90;
+      if (ecat_cycle() < ecat_expected_wkc())
+      {
+         low_wkc++;
+      }
+      cycles++;
+
+      if (sdo_every_cycles > 0 && (i % sdo_every_cycles) == 0 && i > 0)
+      {
+         int size = 8;
+         uint8 buf[8] = {0};
+         int wkc;
+
+         clock_gettime(CLOCK_MONOTONIC, &t0);
+         /* 0x8000:01 is the step interval — read only here, so a failure
+          * cannot leave the axis configured differently than it started. */
+         wkc = ec_SDOread(1, 0x8000, 0x01, FALSE, &size, buf, EC_TIMEOUTRXM);
+         clock_gettime(CLOCK_MONOTONIC, &t1);
+
+         double ms = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 +
+                     (double)(t1.tv_nsec - t0.tv_nsec) / 1e6;
+
+         if (ms > worst_sdo_ms)
+         {
+            worst_sdo_ms = ms;
+         }
+         sdos++;
+         if (wkc <= 0)
+         {
+            sdo_fail++;
+         }
+         else
+         {
+            value = 0;
+            for (int b = 0; b < size && b < 8; b++)
+            {
+               value |= (int64_t)buf[b] << (8 * b);
+            }
+         }
+      }
+
+      clock_gettime(CLOCK_MONOTONIC, &c1);
+      double cms = (double)(c1.tv_sec - c0.tv_sec) * 1000.0 +
+                   (double)(c1.tv_nsec - c0.tv_nsec) / 1e6;
+
+      if (cms > worst_cycle_ms)
+      {
+         worst_cycle_ms = cms;
+      }
+      cycle_sleep_ns(&next, ecat_dc_correction());
+
+      /*
+       * The phase error is the number that actually matters for a
+       * DC-synchronised node. A cycle that overruns its budget shifts when the
+       * frame lands relative to SYNC0, and unlike a missed deadline that is
+       * something the slave can feel. Ignore the first two seconds while the
+       * phase-locked loop settles.
+       */
+      if (ecat_dc_active() && i > 2 * (1000000 / ECAT_CYCLE_US))
+      {
+         int64_t d = ecat_dc_delta();
+         int64_t mag = (d < 0) ? -d : d;
+
+         if (mag > worst_dc_ns)
+         {
+            worst_dc_ns = mag;
+         }
+      }
+   }
+
+   uint16 al = 0;
+
+   ec_FPRD(ec_slave[1].configadr, 0x0130, sizeof(al), &al, EC_TIMEOUTRET);
+
+   printf("cycles=%d low_wkc=%d sdos=%d sdo_failed=%d\n", cycles, low_wkc,
+          sdos, sdo_fail);
+   printf("worst SDO %.2f ms, worst cycle %.2f ms (budget %d ms), "
+          "last value %lld\n",
+          worst_sdo_ms, worst_cycle_ms, ECAT_CYCLE_US / 1000, (long long)value);
+   printf("worst DC phase error after settling: %lld ns\n",
+          (long long)worst_dc_ns);
+   printf("AL Status after the run: 0x%4.4x (%s)\n", al,
+          (al & 0x000f) == 0x08 ? "still OP" : "LEFT OP");
+
+   return (low_wkc == 0) && (sdo_fail == 0) && ((al & 0x000f) == 0x08);
 }
 
 void ecat_close(void)

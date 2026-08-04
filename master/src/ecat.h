@@ -136,6 +136,17 @@ bool ecat_sdo_read(uint16_t index, uint8_t sub, int64_t *out);
 bool ecat_sdo_write(uint16_t index, uint8_t sub, int size, int64_t value);
 
 /*
+ * Run process data in OP while injecting SDOs, and report what that costs.
+ *
+ * SDOs are blocking mailbox transactions and the cyclic loop has a 10 ms
+ * budget with a 100 ms watchdog behind it, so "does mailbox traffic disturb
+ * process data?" is a real question rather than a rhetorical one. Returns true
+ * only if no cycle went low on the working counter, no SDO failed, and the
+ * slave was still in OP at the end.
+ */
+bool ecat_sdo_during_op(int seconds, int sdo_every_cycles);
+
+/*
  * Read AL Status with a broadcast read and nothing else, then close.
  *
  * Needed because ecat_open() calls ec_config_init(), which transitions every

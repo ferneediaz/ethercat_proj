@@ -26,6 +26,7 @@ static void usage(const char *prog)
            "  alstate          read AL Status without disturbing it\n"
            "  wdtest           time the SM watchdog by stopping process data\n"
            "  sdo read|write   CoE object access (see: sdo)\n"
+           "  sdotest [s] [n]  SDO every n cycles while in OP, measure the cost\n"
            "  gpio             identify the L1-L8 LEDs and SW1/SW2 buttons\n"
            "  buttons [secs]   watch every ESC input for SW1/SW2 (default 45s)\n"
            "  op               bring the slave to OP and hold (Ctrl-C to stop)\n"
@@ -388,6 +389,13 @@ int main(int argc, char *argv[])
                  "  sdo write 0x8000 1 5000000 4\n");
          rc = EXIT_FAILURE;
       }
+   }
+   else if (strcmp(cmd, "sdotest") == 0)
+   {
+      rc = ecat_sdo_during_op(argc >= 4 ? atoi(argv[3]) : 10,
+                              argc >= 5 ? atoi(argv[4]) : 20)
+               ? EXIT_SUCCESS
+               : EXIT_FAILURE;
    }
    else if (strcmp(cmd, "wdtest") == 0)
    {

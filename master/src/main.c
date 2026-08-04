@@ -1,4 +1,7 @@
+#include <errno.h>
+#include <sched.h>
 #include <signal.h>
+#include <sys/mman.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -279,6 +282,67 @@ static int run_move(uint16_t from, uint16_t to)
    return EXIT_SUCCESS;
 }
 
+
+/*
+ * Ask the kernel to treat this loop as realtime work.
+ *
+ * Without this the cyclic loop runs at ordinary priority, so the scheduler
+ * weighs a 10 ms bus deadline exactly the same as systemd doing housekeeping.
+ * That is visible on this bench: with the Pi still finishing its boot the DC
+ * phase error sat around 228 us, settling to ~29 us only once the machine went
+ * quiet. The bus was never the bottleneck — the scheduler was.
+ *
+ * Two separate things, both needed:
+ *
+ *   SCHED_FIFO   runs ahead of every normal-priority task, and is not
+ *                preempted by them. Safe here only because the loop blocks in
+ *                clock_nanosleep every cycle; a realtime task that spins would
+ *                lock up the core it is on.
+ *   mlockall     keeps our pages resident. A page fault in the middle of a
+ *                cycle costs milliseconds, and it would arrive as an
+ *                occasional inexplicable outlier rather than a steady cost —
+ *                the hardest kind of jitter to chase.
+ *
+ * Priority 80 leaves room above for kernel threads that must not be starved,
+ * notably the network softirq that actually moves our frames. Higher is not
+ * better: outrank the thing delivering your packets and you wait longer, not
+ * less.
+ *
+ * Both are best-effort. Failing means running exactly as before, which is a
+ * worse-performing but working master, so a failure warns and continues rather
+ * than aborting. Set SERVO_RT=0 to skip it and measure the difference.
+ */
+static void enable_realtime(void)
+{
+   const char *env = getenv("SERVO_RT");
+
+   if (env != NULL && strcmp(env, "0") == 0)
+   {
+      printf("Realtime scheduling disabled by SERVO_RT=0.\n");
+      return;
+   }
+
+   if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0)
+   {
+      fprintf(stderr, "mlockall failed (%s) — page faults may show up as "
+                      "occasional large jitter.\n",
+              strerror(errno));
+   }
+
+   struct sched_param param = {.sched_priority = 80};
+
+   if (sched_setscheduler(0, SCHED_FIFO, &param) != 0)
+   {
+      fprintf(stderr,
+              "SCHED_FIFO failed (%s) — the cycle will compete with ordinary "
+              "processes. Run under sudo for realtime priority.\n",
+              strerror(errno));
+      return;
+   }
+   printf("Realtime: SCHED_FIFO priority %d, memory locked.\n",
+          param.sched_priority);
+}
+
 int main(int argc, char *argv[])
 {
    if (argc < 3)
@@ -299,6 +363,8 @@ int main(int argc, char *argv[])
    {
       return ecat_probe_al_state(ifname) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
    }
+
+   enable_realtime();
 
    signal(SIGINT, on_stop_signal);
    signal(SIGTERM, on_stop_signal);

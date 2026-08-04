@@ -69,6 +69,28 @@ static const struct gpio_dt_spec enable_pin = GPIO_DT_SPEC_GET(AXIS_NODE, enable
 static int32_t commanded_steps;
 static bool commanded_valid;
 
+/*
+ * Runtime copies of the two devicetree properties that can be changed over
+ * CoE. Initialised from the devicetree so the object dictionary's defaults and
+ * the hardware description cannot disagree.
+ */
+static uint32_t step_interval_ns = STEP_INTERVAL_NS;
+static uint16_t max_angle_deg = STEPPER_ANGLE_MAX;
+
+/*
+ * Bounds for the writable parameters.
+ *
+ * The lower step interval is not arbitrary: the controller uses half of it as
+ * the STEP high time, and a DRV8825 ignores a pulse shorter than 1.9 us. 200 us
+ * leaves two orders of magnitude of margin while still allowing 5000 steps/s,
+ * which is already faster than this under-driven motor can follow. The upper
+ * bound only stops a master from stalling the axis for a minute per step.
+ */
+#define STEP_INTERVAL_MIN_NS 200000u
+#define STEP_INTERVAL_MAX_NS 50000000u
+#define MAX_ANGLE_MIN_DEG 1u
+#define MAX_ANGLE_MAX_DEG 360u
+
 bool stepper_present(void)
 {
 	return true;
@@ -114,7 +136,7 @@ int stepper_init(void)
 
 	/* Must precede any move: with no interval set the controller rejects
 	 * move_to() outright with -EINVAL rather than picking a default rate. */
-	rc = stepper_ctrl_set_microstep_interval(ctrl, STEP_INTERVAL_NS);
+	rc = stepper_ctrl_set_microstep_interval(ctrl, step_interval_ns);
 	if (rc < 0) {
 		LOG_ERR("stepper set_microstep_interval failed: %d", rc);
 		return rc;
@@ -159,8 +181,8 @@ int stepper_set_angle(uint16_t degrees)
 {
 	int rc;
 
-	if (degrees > (uint16_t)STEPPER_ANGLE_MAX) {
-		degrees = (uint16_t)STEPPER_ANGLE_MAX;
+	if (degrees > max_angle_deg) {
+		degrees = max_angle_deg;
 	}
 
 	const int32_t target = angle_to_steps(degrees);
@@ -191,7 +213,7 @@ static uint16_t steps_to_angle(int32_t steps)
 	uint32_t deg = ((uint32_t)steps * DEGREES_PER_REV + STEPS_PER_REV / 2u) /
 		       STEPS_PER_REV;
 
-	return (uint16_t)MIN(deg, (uint32_t)STEPPER_ANGLE_MAX);
+	return (uint16_t)MIN(deg, (uint32_t)max_angle_deg);
 }
 
 int stepper_actual_angle(uint16_t *degrees)
@@ -209,6 +231,58 @@ int stepper_actual_angle(uint16_t *degrees)
 	}
 
 	*degrees = steps_to_angle(steps);
+	return 0;
+}
+
+uint32_t stepper_step_interval_ns(void)
+{
+	return step_interval_ns;
+}
+
+uint16_t stepper_max_angle(void)
+{
+	return max_angle_deg;
+}
+
+uint16_t stepper_steps_per_rev(void)
+{
+	return (uint16_t)STEPS_PER_REV;
+}
+
+uint8_t stepper_microstep_factor(void)
+{
+	return (uint8_t)MICROSTEP_FACTOR;
+}
+
+int stepper_set_step_interval(uint32_t ns)
+{
+	int rc;
+
+	if (ns < STEP_INTERVAL_MIN_NS || ns > STEP_INTERVAL_MAX_NS) {
+		LOG_WRN("step interval %u ns rejected (allowed %u..%u)",
+			ns, STEP_INTERVAL_MIN_NS, STEP_INTERVAL_MAX_NS);
+		return -ERANGE;
+	}
+
+	rc = stepper_ctrl_set_microstep_interval(ctrl, ns);
+	if (rc < 0) {
+		LOG_ERR("set_microstep_interval(%u) failed: %d", ns, rc);
+		return rc;
+	}
+	step_interval_ns = ns;
+	LOG_INF("step interval now %u ns (%u steps/s)", ns, 1000000000u / ns);
+	return 0;
+}
+
+int stepper_set_max_angle(uint16_t degrees)
+{
+	if (degrees < MAX_ANGLE_MIN_DEG || degrees > MAX_ANGLE_MAX_DEG) {
+		LOG_WRN("max angle %u deg rejected (allowed %u..%u)", degrees,
+			MAX_ANGLE_MIN_DEG, MAX_ANGLE_MAX_DEG);
+		return -ERANGE;
+	}
+	max_angle_deg = degrees;
+	LOG_INF("max angle now %u deg", degrees);
 	return 0;
 }
 
@@ -231,6 +305,38 @@ int stepper_set_angle(uint16_t degrees)
 }
 
 int stepper_actual_angle(uint16_t *degrees)
+{
+	ARG_UNUSED(degrees);
+	return -ENODEV;
+}
+
+uint32_t stepper_step_interval_ns(void)
+{
+	return 0;
+}
+
+uint16_t stepper_max_angle(void)
+{
+	return 0;
+}
+
+uint16_t stepper_steps_per_rev(void)
+{
+	return 0;
+}
+
+uint8_t stepper_microstep_factor(void)
+{
+	return 0;
+}
+
+int stepper_set_step_interval(uint32_t ns)
+{
+	ARG_UNUSED(ns);
+	return -ENODEV;
+}
+
+int stepper_set_max_angle(uint16_t degrees)
 {
 	ARG_UNUSED(degrees);
 	return -ENODEV;

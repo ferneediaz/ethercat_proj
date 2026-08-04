@@ -8,11 +8,14 @@
  */
 #include "soes_app.h"
 
+#include <string.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 #include "ax58100.h"
 #include "esc_irq.h"
+#include "stepper.h"
 #include "ecat_slv.h"
 #include "esc.h"
 #include "sync0.h"
@@ -82,6 +85,110 @@ void cb_get_inputs(void)
 	Obj.Inputs.actual_angle = read_actual ? read_actual(echo) : echo;
 }
 
+
+/*
+ * Seed 0x8000 from the hardware rather than from a second set of constants.
+ *
+ * This has to be a hook, not a plain assignment before ecat_slv_init: SOES
+ * calls COE_initDefaultValues() during init, which writes every object's
+ * object-list default into its storage. Our defaults are not compile-time
+ * literals — they come from the devicetree — so seeding beforehand was
+ * silently overwritten with zeros, and a master reading 0x8000 got four
+ * zeroes with the right widths. set_defaults_hook runs immediately after
+ * that pass, which is exactly what it exists for.
+ */
+static void on_set_defaults(void)
+{
+	Obj.Axis.step_interval_ns = stepper_step_interval_ns();
+	Obj.Axis.max_angle = stepper_max_angle();
+	Obj.Axis.steps_per_rev = stepper_steps_per_rev();
+	Obj.Axis.microstep_factor = stepper_microstep_factor();
+
+	LOG_INF("axis params: %u ns/step, max %u deg, %u steps/rev, x%u micro",
+		Obj.Axis.step_interval_ns, Obj.Axis.max_angle,
+		Obj.Axis.steps_per_rev, Obj.Axis.microstep_factor);
+}
+
+/*
+ * Object dictionary index for the axis parameters. Kept next to the hooks
+ * that service it rather than in a header, because nothing else needs it.
+ */
+#define OBJ_AXIS 0x8000
+
+/*
+ * Validate a parameter BEFORE it is stored.
+ *
+ * SOES writes the value into the object's storage and then calls the post
+ * hook, so rejecting afterwards would mean the dictionary already holds a
+ * value the hardware refused — a master reading it back would be told its
+ * write succeeded. Checking here means a rejected write leaves both the
+ * dictionary and the axis untouched.
+ */
+static uint32_t on_sdo_download_pre(uint16_t index, uint8_t subindex,
+				    void *data, size_t size, uint16_t flags)
+{
+	ARG_UNUSED(flags);
+
+	if (index != OBJ_AXIS) {
+		return 0;
+	}
+
+	switch (subindex) {
+	case 0x01: {
+		uint32_t ns;
+
+		if (size < sizeof(ns)) {
+			return ABORT_TYPEMISMATCH;
+		}
+		memcpy(&ns, data, sizeof(ns));
+		if (stepper_set_step_interval(etohl(ns)) != 0) {
+			return ABORT_VALUE_EXCEEDED;
+		}
+		return 0;
+	}
+	case 0x02: {
+		uint16_t deg;
+
+		if (size < sizeof(deg)) {
+			return ABORT_TYPEMISMATCH;
+		}
+		memcpy(&deg, data, sizeof(deg));
+		if (stepper_set_max_angle(etohs(deg)) != 0) {
+			return ABORT_VALUE_EXCEEDED;
+		}
+		return 0;
+	}
+	case 0x03:
+	case 0x04:
+		/* Described by the motor and the board's DIP switches, neither
+		 * of which firmware can change. ATYPE_RO should already have
+		 * stopped this; refusing here too means a mistake in the object
+		 * list cannot quietly turn into a lie. */
+		return ABORT_READONLY;
+	default:
+		return ABORT_NOSUBINDEX;
+	}
+}
+
+/*
+ * Re-read the axis after a successful write, so the dictionary reports what
+ * the hardware actually took rather than what was asked for. They agree today
+ * because the pre hook rejects anything out of range, but a future parameter
+ * that clamps rather than refuses would diverge silently otherwise.
+ */
+static uint32_t on_sdo_download_post(uint16_t index, uint8_t subindex,
+				     uint16_t flags)
+{
+	ARG_UNUSED(subindex);
+	ARG_UNUSED(flags);
+
+	if (index == OBJ_AXIS) {
+		Obj.Axis.step_interval_ns = stepper_step_interval_ns();
+		Obj.Axis.max_angle = stepper_max_angle();
+	}
+	return 0;
+}
+
 void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 {
 	static esc_cfg_t config = {
@@ -96,13 +203,13 @@ void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 		 * timing one. 150 is what SOES's own demos use.
 		 */
 		.watchdog_cnt = 150,
-		.set_defaults_hook = NULL,
+		.set_defaults_hook = on_set_defaults,
 		.pre_state_change_hook = NULL,
 		.post_state_change_hook = NULL,
 		.application_hook = NULL,
 		.safeoutput_override = NULL,
-		.pre_object_download_hook = NULL,
-		.post_object_download_hook = NULL,
+		.pre_object_download_hook = on_sdo_download_pre,
+		.post_object_download_hook = on_sdo_download_post,
 		.pre_object_upload_hook = NULL,
 		.post_object_upload_hook = NULL,
 		.rxpdo_override = NULL,

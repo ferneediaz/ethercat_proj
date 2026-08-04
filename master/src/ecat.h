@@ -122,6 +122,20 @@ void ecat_button_watch(int seconds);
 bool ecat_watchdog_test(void);
 
 /*
+ * CoE mailbox access.
+ *
+ * A different path from process data: PDOs ride the cyclic frame and carry
+ * only what the mapping declares, while SDOs go through the mailbox
+ * SyncManagers and can reach any object in the dictionary. Usable from PRE-OP,
+ * so parameters can be set before the axis is allowed to move.
+ *
+ * Both print what happened. A refused write is a result rather than an error —
+ * it means the slave rejected the value and the abort code says why.
+ */
+bool ecat_sdo_read(uint16_t index, uint8_t sub, int64_t *out);
+bool ecat_sdo_write(uint16_t index, uint8_t sub, int size, int64_t value);
+
+/*
  * Read AL Status with a broadcast read and nothing else, then close.
  *
  * Needed because ecat_open() calls ec_config_init(), which transitions every

@@ -25,6 +25,7 @@ static void usage(const char *prog)
            "  regs             dump and decode the ESC configuration registers\n"
            "  alstate          read AL Status without disturbing it\n"
            "  wdtest           time the SM watchdog by stopping process data\n"
+           "  sdo read|write   CoE object access (see: sdo)\n"
            "  gpio             identify the L1-L8 LEDs and SW1/SW2 buttons\n"
            "  buttons [secs]   watch every ESC input for SW1/SW2 (default 45s)\n"
            "  op               bring the slave to OP and hold (Ctrl-C to stop)\n"
@@ -353,6 +354,38 @@ int main(int argc, char *argv[])
       }
       else
       {
+         rc = EXIT_FAILURE;
+      }
+   }
+   else if (strcmp(cmd, "sdo") == 0)
+   {
+      /* SDOs need the mailbox, which needs PRE-OP; ec_config_init has
+       * already taken us there by the time we get here. */
+      if (argc >= 6 && strcmp(argv[3], "write") == 0)
+      {
+         rc = ecat_sdo_write((uint16_t)strtoul(argv[4], NULL, 0),
+                             (uint8_t)strtoul(argv[5], NULL, 0),
+                             argc >= 8 ? atoi(argv[7]) : 4,
+                             argc >= 7 ? strtoll(argv[6], NULL, 0) : 0)
+                  ? EXIT_SUCCESS
+                  : EXIT_FAILURE;
+      }
+      else if (argc >= 5 && strcmp(argv[3], "read") == 0)
+      {
+         rc = ecat_sdo_read((uint16_t)strtoul(argv[4], NULL, 0),
+                            argc >= 6 ? (uint8_t)strtoul(argv[5], NULL, 0) : 0,
+                            NULL)
+                  ? EXIT_SUCCESS
+                  : EXIT_FAILURE;
+      }
+      else
+      {
+         fprintf(stderr,
+                 "sdo read <index> [sub]\n"
+                 "sdo write <index> <sub> <value> [size_bytes]\n"
+                 "Index and sub accept 0x notation. Example:\n"
+                 "  sdo read 0x8000 1\n"
+                 "  sdo write 0x8000 1 5000000 4\n");
          rc = EXIT_FAILURE;
       }
    }

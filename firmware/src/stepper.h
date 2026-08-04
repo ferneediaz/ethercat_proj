@@ -79,4 +79,33 @@ int stepper_set_angle(uint16_t degrees);
  */
 int stepper_actual_angle(uint16_t *degrees);
 
+/*
+ * Axis parameters, for the CoE object dictionary (0x8000).
+ *
+ * The devicetree supplies the defaults; these expose them so an object
+ * dictionary can be built from the hardware description rather than from a
+ * second copy of the same numbers that can drift out of step with it.
+ *
+ * The first two are writable at run time. The other two describe the motor and
+ * the board's DIP switches, which software cannot change — a stepper does not
+ * grow more steps because an SDO said so — so they are read-only and a master
+ * that writes them gets a CoE abort.
+ */
+uint32_t stepper_step_interval_ns(void);
+uint16_t stepper_max_angle(void);
+uint16_t stepper_steps_per_rev(void);
+uint8_t stepper_microstep_factor(void);
+
+/*
+ * Change the step rate on a running axis. Returns 0, or negative errno when
+ * the value is outside what the driver can honour.
+ *
+ * Takes effect on the next move rather than the one in flight: the controller
+ * latches the interval when a move starts.
+ */
+int stepper_set_step_interval(uint32_t ns);
+
+/* Change the clamp applied to commanded angles. Returns 0 or negative errno. */
+int stepper_set_max_angle(uint16_t degrees);
+
 #endif /* STEPPER_H */

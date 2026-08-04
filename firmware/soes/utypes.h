@@ -21,6 +21,21 @@ typedef struct {
 	struct {
 		uint16_t target_angle;
 	} Outputs;
+
+	/*
+	 * Axis parameters (0x8000). Not mapped into any PDO — these are
+	 * configuration, reached over the CoE mailbox with SDO read/write
+	 * while the bus runs, which is how real EtherCAT devices are set up.
+	 *
+	 * Seeded from the devicetree at startup so the dictionary and the
+	 * hardware description cannot disagree.
+	 */
+	struct {
+		uint32_t step_interval_ns;
+		uint16_t max_angle;
+		uint16_t steps_per_rev;
+		uint8_t microstep_factor;
+	} Axis;
 } _Objects;
 
 extern _Objects Obj;

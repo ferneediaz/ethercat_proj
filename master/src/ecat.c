@@ -737,20 +737,30 @@ bool ecat_request_state(uint16 state)
       return true;
    }
 
+   /* Where are we actually? The cached value can be stale, or zero if
+    * nothing has read it yet — and acting on zero made this walk try to
+    * CLIMB to SAFE-OP from PRE-OP on any command that never reached OP,
+    * which of course failed. */
+   ec_readstate();
+
    for (size_t i = 0; i < sizeof(ladder) / sizeof(ladder[0]); i++)
    {
       uint16 step = ladder[i];
+      uint16 cur = ec_slave[0].state & 0x000f;
+      bool in_error = (ec_slave[0].state & EC_STATE_ERROR) != 0;
 
-      /* Skip rungs above where we already are, and stop once the caller's
-       * target has been reached. */
-      if (ec_slave[0].state < step && ec_slave[0].state != 0)
+      /* Only ever descend. Already at or below this rung means nothing to
+       * do here — but keep going, because a lower rung may still apply. */
+      if (cur <= step)
       {
          continue;
       }
 
       uint16 before = ec_slave[0].state;
 
-      ec_slave[0].state = step;
+      /* A slave sitting in a state with the error bit latched ignores a
+       * plain state request; the acknowledge bit is what clears it. */
+      ec_slave[0].state = in_error ? (step | EC_STATE_ACK) : step;
       ec_writestate(0);
 
       for (int t = 0; t < 50; t++)
@@ -765,12 +775,13 @@ bool ecat_request_state(uint16 state)
       printf("  0x%2.2x -> 0x%2.2x: now 0x%2.2x\n", before, step,
              ec_slave[0].state);
 
-      if (ec_slave[0].state != step)
+      if ((ec_slave[0].state & 0x000f) != step)
       {
+         ec_readstate();
          fprintf(stderr,
                  "Slave would not leave 0x%2.2x for 0x%2.2x (AL status code "
                  "0x%4.4x %s).\n",
-                 ec_slave[0].state, step, ec_slave[1].ALstatuscode,
+                 before, step, ec_slave[1].ALstatuscode,
                  ec_ALstatuscode2string(ec_slave[1].ALstatuscode));
          ok = false;
          break;
@@ -942,6 +953,81 @@ bool ecat_watchdog_test(void)
    ec_FPRD(adr, 0x0134, sizeof(alcode), &alcode, EC_TIMEOUTRET);
    printf("AL Status 0x%4.4x, AL Status Code 0x%4.4x (%s)\n", al, alcode,
           ec_ALstatuscode2string(alcode));
+   return true;
+}
+
+
+/*
+ * SDO access over the CoE mailbox.
+ *
+ * Different path from everything else here: process data rides the cyclic
+ * frame and is limited to what the PDO mapping declares, while SDOs go through
+ * the mailbox SyncManagers (SM0/SM1 at 0x1000/0x1080, which this module's
+ * EEPROM already declares) and can reach any object in the dictionary. That is
+ * how real EtherCAT devices are configured — process data moves, SDOs set up.
+ *
+ * Works from PRE-OP upwards, so parameters can be read and set before the
+ * axis is allowed to move.
+ */
+bool ecat_sdo_read(uint16_t index, uint8_t sub, int64_t *out)
+{
+   uint8 buf[8] = {0};
+   int size = (int)sizeof(buf);
+   int wkc;
+
+   wkc = ec_SDOread(1, index, sub, FALSE, &size, buf, EC_TIMEOUTRXM);
+   if (wkc <= 0)
+   {
+      fprintf(stderr, "SDO read 0x%4.4x:%2.2x failed (wkc %d)%s%s\n", index,
+              sub, wkc, ec_iserror() ? ": " : "",
+              ec_iserror() ? ec_elist2string() : "");
+      return false;
+   }
+
+   /* The dictionary decides the width; report what came back rather than
+    * assuming, so a 1-byte object does not read as a huge number. */
+   int64_t v = 0;
+
+   for (int i = 0; i < size && i < 8; i++)
+   {
+      v |= (int64_t)buf[i] << (8 * i);
+   }
+   printf("0x%4.4x:%2.2x = %lld (0x%llx, %d byte%s)\n", index, sub,
+          (long long)v, (unsigned long long)v, size, size == 1 ? "" : "s");
+   if (out != NULL)
+   {
+      *out = v;
+   }
+   return true;
+}
+
+bool ecat_sdo_write(uint16_t index, uint8_t sub, int size, int64_t value)
+{
+   uint8 buf[8] = {0};
+   int wkc;
+
+   if (size < 1 || size > 8)
+   {
+      fprintf(stderr, "SDO write size must be 1..8 bytes.\n");
+      return false;
+   }
+   for (int i = 0; i < size; i++)
+   {
+      buf[i] = (uint8)((uint64_t)value >> (8 * i));
+   }
+
+   wkc = ec_SDOwrite(1, index, sub, FALSE, size, buf, EC_TIMEOUTRXM);
+   if (wkc <= 0)
+   {
+      /* A refused write is a result, not a crash: the slave is telling us the
+       * value is out of range, and the abort code says why. */
+      fprintf(stderr, "SDO write 0x%4.4x:%2.2x = %lld REFUSED (wkc %d)%s%s\n",
+              index, sub, (long long)value, wkc, ec_iserror() ? ": " : "",
+              ec_iserror() ? ec_elist2string() : "");
+      return false;
+   }
+   printf("0x%4.4x:%2.2x <- %lld (%d byte%s) OK\n", index, sub,
+          (long long)value, size, size == 1 ? "" : "s");
    return true;
 }
 

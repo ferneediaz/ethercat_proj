@@ -67,6 +67,12 @@ static const char acName6000_02[] = "Actual Angle";
 static const char acName7000[] = "Servo Outputs";
 static const char acName7000_00[] = "Max SubIndex";
 static const char acName7000_01[] = "Target Angle";
+static const char acName8000[] = "Axis Parameters";
+static const char acName8000_00[] = "Max SubIndex";
+static const char acName8000_01[] = "Step Interval ns";
+static const char acName8000_02[] = "Max Angle";
+static const char acName8000_03[] = "Full Steps Per Revolution";
+static const char acName8000_04[] = "Microstep Factor";
 
 const _objd SDO1000[] = {
 	{0x0, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1000, 0x00001389, NULL},
@@ -146,6 +152,32 @@ const _objd SDO7000[] = {
 	 &Obj.Outputs.target_angle},
 };
 
+/*
+ * 0x8000 — axis parameters, reachable by SDO while the bus is running.
+ *
+ * The first two are RW and take effect immediately: writing 0x8000:01 changes
+ * how fast the axis moves, which is observable from the master by timing a
+ * move. That is the point of having them here rather than as compile-time
+ * constants — it is the difference between a device that is configured and one
+ * that merely has settings baked in.
+ *
+ * The last two are RO. A motor does not gain steps because an SDO said so, and
+ * the microstep factor is set by DIP switches this firmware cannot read back,
+ * so claiming to change either would be a lie the master could not detect.
+ * Writes to them return ABORT_READONLY.
+ */
+const _objd SDO8000[] = {
+	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName8000_00, 4, NULL},
+	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RW, acName8000_01, 0,
+	 &Obj.Axis.step_interval_ns},
+	{0x02, DTYPE_UNSIGNED16, 16, ATYPE_RW, acName8000_02, 0,
+	 &Obj.Axis.max_angle},
+	{0x03, DTYPE_UNSIGNED16, 16, ATYPE_RO, acName8000_03, 0,
+	 &Obj.Axis.steps_per_rev},
+	{0x04, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName8000_04, 0,
+	 &Obj.Axis.microstep_factor},
+};
+
 const _objectlist SDOobjects[] = {
 	{0x1000, OTYPE_VAR, 0, 0, acName1000, SDO1000},
 	{0x1008, OTYPE_VAR, 0, 0, acName1008, SDO1008},
@@ -159,5 +191,6 @@ const _objectlist SDOobjects[] = {
 	{0x1C13, OTYPE_ARRAY, 1, 0, acName1C13, SDO1C13},
 	{0x6000, OTYPE_RECORD, 2, 0, acName6000, SDO6000},
 	{0x7000, OTYPE_RECORD, 1, 0, acName7000, SDO7000},
+	{0x8000, OTYPE_RECORD, 4, 0, acName8000, SDO8000},
 	{0xffff, 0xff, 0xff, 0xff, NULL, NULL},
 };

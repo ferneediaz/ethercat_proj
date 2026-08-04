@@ -38,6 +38,38 @@
  * slaveinfo), so nothing has to be written to make this work.
  */
 #define ESC_WD_STATUS_OK 0x01u /* bit 0: set while the watchdog is fed */
+
+/*
+ * AL Event, ETG.1000.4. Two registers with the same bit layout:
+ *
+ *   0x0220 AL Event Request — what has happened and needs servicing.
+ *   0x0204 AL Event Mask    — which of those are allowed to assert SINT.
+ *
+ * The mask resets to ZERO, so SINT stays silent until something writes it.
+ * That is why the IRQ wire looked dead for most of this project: the pin was
+ * connected and the chip was working, and nothing had ever asked it to speak.
+ *
+ * Reading 0x0220 is what clears the event and releases the pin, which matters
+ * because SINT is level triggered on this module (EEPROM byte 0x0A bit 4).
+ *
+ * Values match SOES's ESCREG_ALEVENT_* exactly — both come from the spec. They
+ * are restated here so this layer builds without SOES, since the hand-written
+ * slave uses the same hardware.
+ */
+#define ESC_REG_AL_EVENT_MASK 0x0204u
+#define ESC_REG_AL_EVENT 0x0220u
+
+#define ESC_ALEVENT_CONTROL 0x00000001u  /* master wrote AL Control */
+#define ESC_ALEVENT_DC_LATCH 0x00000002u
+#define ESC_ALEVENT_DC_SYNC0 0x00000004u
+#define ESC_ALEVENT_DC_SYNC1 0x00000008u
+#define ESC_ALEVENT_SMCHANGE 0x00000010u /* SM activation register changed */
+#define ESC_ALEVENT_EEP 0x00000020u
+#define ESC_ALEVENT_WD 0x00000040u
+#define ESC_ALEVENT_SM0 0x00000100u      /* mailbox out written */
+#define ESC_ALEVENT_SM1 0x00000200u      /* mailbox in read */
+#define ESC_ALEVENT_SM2 0x00000400u      /* process outputs written */
+#define ESC_ALEVENT_SM3 0x00000800u      /* process inputs read */
 /* AL state machine. Addresses per AX58100 datasheet v105 register map
  * (and ETG.1000): AL Control is what the master requests, AL Status is
  * what the slave reports back, AL Status Code carries the reason for a

@@ -37,6 +37,19 @@ int sync0_init(void);
  */
 bool sync0_pace(void);
 
+/*
+ * The semaphore the SYNC0 handler signals, and the bookkeeping that goes with
+ * consuming it.
+ *
+ * sync0_pace() is the simple case: block until the edge. A loop that must also
+ * wake on SINT cannot use it, because it has to wait on two things at once —
+ * so it k_polls this semaphore directly and then calls sync0_notify() with
+ * whether an edge was what woke it, which keeps the DC lock/unlock detection
+ * working exactly as before.
+ */
+struct k_sem *sync0_signal(void);
+void sync0_notify(bool edge);
+
 /* True once edges have been seen and the loop is being driven by them. */
 bool sync0_locked(void);
 

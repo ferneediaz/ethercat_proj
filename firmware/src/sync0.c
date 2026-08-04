@@ -156,6 +156,39 @@ bool sync0_pace(void)
 				  : K_MSEC(SYNC0_POLL_MS);
 	bool edge = (k_sem_take(&sync0_sem, wait) == 0);
 
+	sync0_notify(edge);
+	return edge;
+}
+
+struct k_sem *sync0_signal(void)
+{
+	return &sync0_sem;
+}
+
+void sync0_notify(bool edge)
+{
+	static int64_t last_edge_ms;
+
+	if (!armed) {
+		return;
+	}
+
+	/*
+	 * Unlock on elapsed TIME, not on a single wake without an edge.
+	 *
+	 * When this was only ever called from sync0_pace(), "no edge" meant
+	 * "the wait timed out" and dropping the lock was right. Now the loop
+	 * also wakes on SINT, and SINT and SYNC0 almost never land in the same
+	 * wakeup — so treating any edgeless wake as a stopped clock made the
+	 * lock flap off constantly and report a DC-synchronised bus as polled.
+	 */
+	if (edge) {
+		last_edge_ms = k_uptime_get();
+	} else if (locked &&
+		   (k_uptime_get() - last_edge_ms) < SYNC0_LOCKED_TIMEOUT_MS) {
+		return;
+	}
+
 	if (edge) {
 		/*
 		 * Lock on edge count rather than on consecutive edges: while
@@ -175,8 +208,6 @@ bool sync0_pace(void)
 			"Expected when the master exits or leaves OP.",
 			(uint32_t)atomic_get(&edge_count), SYNC0_POLL_MS);
 	}
-
-	return edge;
 }
 
 bool sync0_locked(void)

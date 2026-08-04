@@ -12,6 +12,7 @@
 #include <zephyr/logging/log.h>
 
 #include "ax58100.h"
+#include "esc_irq.h"
 #include "ecat_slv.h"
 #include "esc.h"
 #include "sync0.h"
@@ -120,6 +121,24 @@ void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 	ecat_slv_init(&config);
 
 	/*
+	 * Arm SINT.
+	 *
+	 * Deliberately after ecat_slv_init: ESC_init resets the chip, which
+	 * clears the AL event mask, so unmasking before this point would be
+	 * silently undone.
+	 *
+	 * SM2 is included so the arrival of process data raises the line. The
+	 * cyclic act still happens on SYNC0 — SINT says data is here, SYNC0
+	 * says it is time — but knowing when the frame landed is what makes
+	 * the difference between the two measurable.
+	 */
+	if (esc_irq_present() && esc_irq_init() == 0) {
+		esc_irq_set_mask(ESC_ALEVENT_CONTROL | ESC_ALEVENT_SMCHANGE |
+				 ESC_ALEVENT_SM0 | ESC_ALEVENT_SM1 |
+				 ESC_ALEVENT_SM2);
+	}
+
+	/*
 	 * Arm SYNC0 after ecat_slv_init(), not before. The ESC's SYNC0 output
 	 * settles as DC is configured, and arming an edge interrupt across that
 	 * would count the settling transition as a real tick.
@@ -145,11 +164,13 @@ void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 	 */
 	int64_t next_beat = k_uptime_get() + 2000;
 	uint32_t last_edges = 0;
+	uint32_t last_irq = 0;
 	bool probed = false;
 	/* Starts true so the first transition logged is the interesting one:
 	 * before OP there is no process data and the watchdog is not running,
 	 * which is not a fault worth announcing. */
 	bool wd_ok = true;
+	struct k_sem *irq_signal = esc_irq_present() ? esc_irq_signal() : NULL;
 
 	while (1) {
 		/*
@@ -160,9 +181,91 @@ void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 		 * Before DC is up it falls back to a 1 ms sleep, which is what
 		 * this loop did before SYNC0 was wired in.
 		 */
-		(void)sync0_pace();
+		/*
+		 * Wait for whichever interrupt comes first.
+		 *
+		 * Two signals, two meanings, and the slave needs both:
+		 *
+		 *   SINT   the ESC raised AL Event — the master wrote SM2, or
+		 *          asked for a state change, or put something in the
+		 *          mailbox. Asynchronous: it arrives when the frame
+		 *          arrives.
+		 *   SYNC0  the distributed clock says it is time to act. Fixed
+		 *          schedule, agreed bus-wide, independent of when the
+		 *          frame happened to land.
+		 *
+		 * Acting on SINT would hand the actuator the master's
+		 * scheduling jitter; waiting only for SYNC0 means never being
+		 * told what changed without asking. So SINT drives servicing
+		 * and SYNC0 drives the cyclic act, which is the same split
+		 * SOES's own reference HAL uses.
+		 *
+		 * One thread rather than two on purpose. The reference splits
+		 * the work across an ISR and a worker task, but that relies on
+		 * CC_ATOMIC_* being real; in this port they fall back to plain
+		 * assignment (see cc.h), so ESCvar would be racy. One thread
+		 * waiting on both semaphores has no such problem and no mutex
+		 * around SPI.
+		 */
+		struct k_poll_event evs[2];
+		int nev = 0;
+
+		if (sync0_present()) {
+			k_poll_event_init(&evs[nev++],
+					  K_POLL_TYPE_SEM_AVAILABLE,
+					  K_POLL_MODE_NOTIFY_ONLY,
+					  sync0_signal());
+		}
+		if (irq_signal != NULL) {
+			k_poll_event_init(&evs[nev++],
+					  K_POLL_TYPE_SEM_AVAILABLE,
+					  K_POLL_MODE_NOTIFY_ONLY, irq_signal);
+		}
+
+		bool sync_edge = false;
+		bool sint = false;
+
+		if (nev > 0) {
+			/*
+			 * The timeout is a backstop, not a poll interval. It
+			 * has to outlast a DC cycle comfortably or it would
+			 * expire between every pair of edges and look like the
+			 * clock had stopped; short enough that a bus which
+			 * goes quiet is still noticed.
+			 */
+			(void)k_poll(evs, nev, K_MSEC(25));
+
+			for (int i = 0; i < nev; i++) {
+				if (evs[i].state !=
+				    K_POLL_STATE_SEM_AVAILABLE) {
+					continue;
+				}
+				if (evs[i].sem == irq_signal) {
+					k_sem_take(evs[i].sem, K_NO_WAIT);
+					sint = true;
+				} else {
+					k_sem_take(evs[i].sem, K_NO_WAIT);
+					sync_edge = true;
+				}
+			}
+		} else {
+			k_sleep(K_MSEC(1));
+		}
+
+		/* Keeps the DC lock/unlock detection behaving as it did when
+		 * this loop called sync0_pace(). */
+		sync0_notify(sync_edge);
+		(void)sint;
 
 		ecat_slv();
+
+		/*
+		 * ecat_slv() has just read 0x0220, which is what releases a
+		 * level-triggered SINT. Re-enable the interrupt now that the
+		 * cause is cleared; doing it any earlier would re-enter the
+		 * handler immediately.
+		 */
+		esc_irq_rearm();
 
 		/*
 		 * Watch the ESC's own SM watchdog alongside SOES's.
@@ -223,11 +326,16 @@ void soes_app_run(soes_apply_fn apply, soes_actual_fn actual)
 
 		if (k_uptime_get() >= next_beat) {
 			uint32_t e = sync0_edges();
+			uint32_t irq = esc_irq_count();
 
 			LOG_INF("sync: %s, %u edges (+%u in 2s, expect ~200), "
-				"pin=%d, AL=0x%02x",
+				"pin=%d, AL=0x%02x | SINT: %u total (+%u), "
+				"line=%d, mask=0x%08x",
 				sync0_locked() ? "DC-LOCKED" : "polled", e,
-				e - last_edges, sync0_level(), ESCvar.ALstatus);
+				e - last_edges, sync0_level(), ESCvar.ALstatus,
+				irq, irq - last_irq, esc_irq_level(),
+				esc_irq_mask());
+			last_irq = irq;
 			/* Once, when we are in OP and should be seeing edges but
 			 * are not, find out what is actually on the pin. */
 			if (!probed && e == 0 && ESCvar.ALstatus == 0x08) {

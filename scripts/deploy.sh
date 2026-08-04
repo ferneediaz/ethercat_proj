@@ -26,6 +26,14 @@ ssh "$DEST" 'cmake -S ~/ethercat/master -B ~/ethercat/master/build && cmake --bu
 echo "== Running unit tests on the Pi =="
 ssh "$DEST" '~/ethercat/master/build/test_angle && ~/ethercat/master/build/test_step_math'
 
+# Put the binary on sudo's PATH. The master needs root for the raw L2 socket,
+# and sudo replaces PATH with its own secure_path, so a plain `sudo
+# servo_master` fails no matter what the login shell's PATH says.
+# /usr/local/bin is in the default secure_path; a symlink there costs nothing
+# and means the commands in the docs are the commands that actually run.
+echo "== Linking servo_master onto sudo's PATH =="
+ssh "$DEST" 'sudo ln -sf ~/ethercat/master/build/servo_master /usr/local/bin/servo_master'
+
 echo
 echo "Done. Run the master with:"
-echo "  ssh $DEST 'sudo ~/ethercat/master/build/servo_master eth0 scan'"
+echo "  ssh $DEST 'sudo servo_master eth0 scan'"

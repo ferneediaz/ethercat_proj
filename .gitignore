@@ -10,3 +10,7 @@ test_angle
 # that duplicates what docs/bringup-checklist.md and the code comments
 # already record, and it would need updating on every hardware change.
 docs/project-explainer.html
+docs/video-script.html
+
+# Handout: rendered presentation artifact, kept local like the others above.
+docs/handout.html

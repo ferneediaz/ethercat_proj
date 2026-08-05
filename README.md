@@ -15,19 +15,14 @@ the slave firmware on an ESP32-S3. Nothing between them is simulated.
 
 ## Watch the walkthrough
 
-[![Watch the walkthrough](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=VIDEO_ID)
+[![Watch the walkthrough](https://img.youtube.com/vi/7cpjhBwXiCE/maxresdefault.jpg)](https://youtu.be/7cpjhBwXiCE)
 
 *A full walkthrough of the hardware and both software stacks — the master, the
 EtherCAT slave controller, and the slave firmware.*
 
 <br>
 
-<!-- ─────────────────────────────────────────────────────────────────────────
-     BENCH PHOTOS
-     Drop images in docs/img/ and swap the paths below.
-     Two side by side; delete a cell for a single wide shot.
-────────────────────────────────────────────────────────────────────────── -->
-
+<img src="https://github.com/user-attachments/assets/42215b5a-9ade-4379-a7cf-5cf236415da4" width="500">
 ## The bench
 
 <p align="center">
@@ -36,8 +31,9 @@ EtherCAT slave controller, and the slave firmware.*
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/img/esc.jpg" alt="AX58100 EtherCAT slave controller" width="100%"></td>
-    <td width="50%"><img src="docs/img/motor.jpg" alt="DRV8825 driver and NEMA 17 stepper" width="100%"></td>
+    <td width="50%"><img width="3024" height="4032" alt="IMG_0941" src="https://github.com/user-attachments/assets/aad3b242-40cc-474c-9b28-fce332888212" />
+</td>
+    <td width="50%"><img width="3024" height="4032" alt="IMG_0943" src="https://github.com/user-attachments/assets/3729199c-7067-419a-aa13-82b5606715aa" /></td>
   </tr>
   <tr>
     <td align="center"><sub>AX58100 — the EtherCAT slave controller</sub></td>
@@ -246,51 +242,6 @@ PASS  wkc 3/3 and low_wkc 0 for the whole run        35 samples
 ```
 
 ---
-
-## Design notes
-
-**The EEPROM is never written.** The module ships with the stock Beckhoff SSC
-demo identity, which declares 2 bytes out and 6 bytes in. Rather than reflash it,
-the process data was designed to fit — `actual_angle` occupies two of the four
-bytes that were previously padding. A bad EEPROM write stops the module
-enumerating at all, and this is the only one.
-
-**Synchronisation.** All three modes are real in this build:
-
-| Mode | When the slave acts | Where |
-|---|---|---|
-| Free run | own local timer | fallback when SYNC0 is absent |
-| SM-synchronous | when the frame arrives | the IRQ path |
-| DC-synchronous | on the SYNC0 edge | default; `SERVO_DC=0` disables it |
-
-DC does not make the bus faster — it makes it *punctual*. The data arrives early
-and waits for the edge, so network jitter stops mattering. Measured phase error
-settles around **38 µs**.
-
-**Hardware is described in data, not code.** The devicetree overlays carry the
-pins, steps per revolution, step rate and angle limit. `sg90.overlay` builds the
-same firmware against a PWM hobby servo instead of a stepper — different
-actuator, identical application code, and the EtherCAT side never notices.
-
-**CoE, not SoE.** SOEM (master) does implement SoE — `ecx_SoEread` /
-`ecx_SoEwrite`. SOES (slave) implements CoE, FoE and EoE only. So the chain is
-CoE because of the *slave stack*, not because of the chip — the AX58100 is
-protocol-agnostic and just carries the mailbox. The motor is an open-loop
-stepper, so a servo drive profile would be work for no gain.
-
-## Measured
-
-| | |
-|---|---|
-| Cycle time | 10 ms |
-| Process data | 2 bytes out, 6 bytes in |
-| Working counter | 3 (read +1, write +2) |
-| DC phase error | median ~38 µs |
-| SYNC0 | 100 µs pulse every 10 ms · 201 edges per 2 s |
-| Watchdog | 100 ms programmed, trips at 91 ms |
-| Full 0→180° move | 100 steps · 290 ms · 28 intermediate positions |
-| SPI | mode 3, CS active low |
-| EtherType | `0x88A4` — raw Layer 2, no IP |
 
 ## Hardware
 

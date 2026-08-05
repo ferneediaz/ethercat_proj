@@ -25,9 +25,7 @@ EtherCAT slave controller, and the slave firmware.*
 <img src="https://github.com/user-attachments/assets/42215b5a-9ade-4379-a7cf-5cf236415da4" width="500">
 ## The bench
 
-<p align="center">
-  <img src="docs/img/bench.jpg" alt="The full chain: Raspberry Pi, AX58100, ESP32-S3, DRV8825 and NEMA 17" width="100%">
-</p>
+
 
 <table>
   <tr>

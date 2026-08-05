@@ -13,7 +13,7 @@ the slave firmware on an ESP32-S3. Nothing between them is simulated.
      if you prefer it to the auto-generated one.
 ────────────────────────────────────────────────────────────────────────── -->
 
-## Watch the walkthrough
+## Watch the walkthrough Watch the youtube video!!
 
 [![Watch the walkthrough](https://img.youtube.com/vi/7cpjhBwXiCE/maxresdefault.jpg)](https://youtu.be/7cpjhBwXiCE)
 

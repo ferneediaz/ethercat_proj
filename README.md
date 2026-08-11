@@ -7,11 +7,6 @@ clock, with every claim below checked by a script that runs against the hardware
 Both sides of the bus are written here: the master application on the Pi, and
 the slave firmware on an ESP32-S3. Nothing between them is simulated.
 
-<!-- ─────────────────────────────────────────────────────────────────────────
-     WALKTHROUGH VIDEO
-     Replace VIDEO_ID with the YouTube id, and thumbnail with your own frame
-     if you prefer it to the auto-generated one.
-────────────────────────────────────────────────────────────────────────── -->
 
 ## Watch the walkthrough youtube video!!
 
@@ -29,15 +24,8 @@ EtherCAT slave controller, and the slave firmware.*
 
 <table>
   <tr>
-    <td width="50%"><img width="3024" height="4032" alt="IMG_0941 2" src="https://github.com/user-attachments/assets/c29b72c3-3a02-477b-8a63-bb25a1a7ca80" />
-" />
-" />
-</td>
-    <td width="50%"><img width="3024" height="4032" alt="IMG_0943 2" src="https://github.com/user-attachments/assets/b373b996-e2fb-4e7a-9797-952c79348874" />
-
-
-" />
-" /></td>
+    <td width="50%"><img width="3024" height="4032" alt="IMG_0941" src="https://github.com/user-attachments/assets/c29b72c3-3a02-477b-8a63-bb25a1a7ca80" /></td>
+    <td width="50%"><img width="3024" height="4032" alt="IMG_0943" src="https://github.com/user-attachments/assets/b373b996-e2fb-4e7a-9797-952c79348874" /></td>
   </tr>
   <tr>
     <td align="center"><sub>AX58100 — the EtherCAT slave controller</sub></td>

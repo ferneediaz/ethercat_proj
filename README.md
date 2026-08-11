@@ -29,10 +29,14 @@ EtherCAT slave controller, and the slave firmware.*
 
 <table>
   <tr>
-    <td width="50%"><img width="3024" height="4032" alt="IMG_0941" src="<img width="3024" height="4032" alt="IMG_0941 2" src="https://github.com/user-attachments/assets/304f42e7-c86c-4f47-8682-22d793e7e7a8" />
+    <td width="50%"><img width="3024" height="4032" alt="IMG_0941 2" src="https://github.com/user-attachments/assets/c29b72c3-3a02-477b-8a63-bb25a1a7ca80" />
+" />
 " />
 </td>
-    <td width="50%"><img width="3024" height="4032" alt="IMG_0943" src="<img width="3024" height="4032" alt="IMG_0943 2" src="https://github.com/user-attachments/assets/026145b1-209a-4175-986e-cb88ae1cafe0" />
+    <td width="50%"><img width="3024" height="4032" alt="IMG_0943 2" src="https://github.com/user-attachments/assets/b373b996-e2fb-4e7a-9797-952c79348874" />
+
+
+" />
 " /></td>
   </tr>
   <tr>

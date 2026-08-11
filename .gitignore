@@ -15,3 +15,9 @@ docs/video-script.html
 # Handout: rendered presentation artifact, kept local like the others above.
 docs/handout.html
 docs/ethercat-servo-node.pdf
+
+# ASIX vendor reference material for the AX58100: datasheets, app notes,
+# schematics, Gerbers and TwinCAT demo sources. Third-party documents we did
+# not write and are not ours to redistribute, and ~45 MB of binaries that
+# would dwarf the actual source. Kept on the bench, not in the repo.
+knowledge base/

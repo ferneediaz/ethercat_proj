@@ -21,9 +21,10 @@ LOG_MODULE_REGISTER(esc, LOG_LEVEL_INF);
  * The command encodings below are the standard EtherCAT ESC values; the
  * AX58100 is register- and protocol-compatible with the Beckhoff ET1100
  * (see AX58100_Migration_from_Beckhoff_ET1100_AppNote_v100.pdf in
- * knowledge base/). They are not printed as a table in the AX58100
- * datasheet itself — the read of ESC_REG_TYPE returning 0xc8 is what
- * confirms this encoding is right on real hardware.
+ * knowledge base/, which is gitignored — fetch it from ASIX). They are not
+ * printed as a table in the AX58100 datasheet itself — the read of
+ * ESC_REG_TYPE returning 0xc8 is what confirms this encoding is right on
+ * real hardware.
  */
 #define ESC_CMD_NOP 0x00u
 #define ESC_CMD_READ 0x02u

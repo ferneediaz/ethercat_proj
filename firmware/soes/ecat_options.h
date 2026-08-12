@@ -19,6 +19,7 @@
 #define __ECAT_OPTIONS_H__
 
 #include "cc.h"
+#include "device_identity.h"
 
 /* File and Ethernet over EtherCAT: neither is used, and both cost flash. */
 #define USE_FOE 0
@@ -58,12 +59,16 @@
 #define SM3_smc 0x20
 #define SM3_act 1
 
-/* Process data is 2 bytes out / 6 bytes in. Left generous so a future PDO
- * change does not silently truncate. */
+/* Process data is 2 bytes out, and 4 or 6 in depending on whether the EEPROM
+ * has been rewritten. Left generous so a future PDO change does not silently
+ * truncate. */
 #define MAX_RXPDO_SIZE 42
 #define MAX_TXPDO_SIZE 42
 
-#define MAX_MAPPINGS_SM2 1
-#define MAX_MAPPINGS_SM3 3
+/* Mapping counts come from the ESI, plus the padding entry on the stock
+ * EEPROM. SOES sizes its mapping arrays from these, so they must be at least
+ * what slave_objectlist.c presents. */
+#define MAX_MAPPINGS_SM2 DEV_RXPDO_ENTRIES
+#define MAX_MAPPINGS_SM3 DEV_TXPDO_ENTRIES
 
 #endif /* __ECAT_OPTIONS_H__ */

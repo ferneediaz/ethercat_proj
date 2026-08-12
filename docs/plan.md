@@ -2,7 +2,7 @@
 
 ## Context
 
-The goal is a complete EtherCAT chain: **Raspberry Pi 3B (SOEM master) → AX58100 (ESC slave) → STM32 Nucleo-F303RE (SPI host, SOES) → SG90 servo**. A human-readable build plan already exists (`knowledge base/EtherCAT_Intern_Build_Plan_1.docx`); this plan turns it into concrete, agent-executable steps.
+The goal is a complete EtherCAT chain: **Raspberry Pi 3B (SOEM master) → AX58100 (ESC slave) → STM32 Nucleo-F303RE (SPI host, SOES) → SG90 servo**. A human-readable build plan already exists (`knowledge base/EtherCAT_Intern_Build_Plan_1.docx`, kept locally and not committed); this plan turns it into concrete, agent-executable steps.
 
 **Current hardware reality:** only the Raspberry Pi 3B exists today. The AX58100 board, STM32 Nucleo, and servo come later. So the plan has two parts:
 
@@ -15,8 +15,9 @@ The goal is a complete EtherCAT chain: **Raspberry Pi 3B (SOEM master) → AX581
 - Motor = SG90 first, with a short upgrade-path section for a real motor later.
 - Topology = single slave node; daisy-chaining a second node is a future note only.
 
-**Key facts from the ASIX kit (already in `knowledge base/`):**
-- ESI XML: Vendor ID `0x0B95`, Product Code `0x00620300`, Revision `0x00000002`, CiA 402 profile, EEPROM ConfigData `050403440a00000000001a00003c`.
+**Key facts from the ASIX kit** (their reference material is not redistributed
+with this repo — see `.gitignore`; download it from ASIX):
+- ASIX's ESI XML: Vendor ID `0x0B95`, Product Code `0x00620300`, Revision `0x00000002`, CiA 402 profile, EEPROM ConfigData `050403440a00000000001a00003c`. **This is not what the module reports.** As shipped it carries Beckhoff's stock SSC demo image (`0x00000009` / `0x26483052` / `0x00020111`); this project's own ESI is `esi/EthercatServoNode.xml`.
 - AX58100 SPI to STM32: Mode 3 (CPOL=1/CPHA=1), MSB-first; `SCS_FUNC` needs a 4.7K pull-up to 3.3V to enable PDI-SPI on `SCS_ESC`.
 - STM32 slave firmware source is not freely downloadable from ASIX → the plan assumes the open-source **SOES** stack for Part B.
 
@@ -29,7 +30,7 @@ The goal is a complete EtherCAT chain: **Raspberry Pi 3B (SOEM master) → AX581
 1. **Initialize the repo** at `/Users/dandiaz/workspace/ethercat_proj` (`git init`, `.gitignore` for build dirs). Layout:
    ```
    ethercat_proj/
-   ├── knowledge base/        # existing ASIX kits + docx (leave as-is)
+   ├── knowledge base/        # ASIX kits + docx — local only, gitignored
    ├── docs/                  # plan.md (this plan, committed), bringup-checklists
    ├── master/                # custom SOEM master app (C, CMake)
    ├── scripts/               # pi-setup.sh, deploy.sh (rsync to Pi), run helpers
@@ -83,7 +84,7 @@ Written into `docs/bringup-checklist.md` as step/verify checklists an agent + hu
 ### Phase 3: AX58100 bring-up (needs AX58100 board)
 1. Power board via its own 5V; Cat5e from Pi `eth0` → AX58100 **IN/Port 0** jack.
 2. `servo_master eth0 scan` → expect Vendor `0x0B95` (blank EEPROM may show unnamed slave — chip alive is the pass).
-3. Write ESI to EEPROM: prefer SOEM `eepromtool` from the Pi (keeps everything Linux-side; TwinCAT on a Windows PC is the fallback per the docx). Power-cycle, rescan → expect name + Product Code `0x00620300`.
+3. Write ESI to EEPROM: `sudo ./scripts/write-eeprom.sh eth0`, which wraps SOEM's `eepromtool` with a mandatory backup, preserves the PDI config words and verifies the readback. Power-cycle, rescan → expect Product Code `0x00620300`, revision `0x00010000`. Deferred in practice until the object dictionary settled; see "Rewriting the EEPROM" in the bring-up checklist.
 4. `servo_master eth0 op` → slave reaches OP with the bare ESC. **Milestone 1.**
 
 ### Phase 4: STM32 + SOES firmware (needs Nucleo-F303RE, wiring kit)

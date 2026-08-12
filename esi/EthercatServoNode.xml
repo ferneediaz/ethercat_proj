@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  EtherCAT Slave Information for this project's servo node.
+
+  This file is the source of truth for the device's identity and process
+  data. Two things are generated from it by scripts/esi_tool.py:
+
+    firmware/soes/device_identity.h   consumed by the slave firmware
+    build/sii.bin                     written to the ESC EEPROM
+
+  Nothing downstream should restate a number that appears here. If the PDO
+  layout changes, change it here and regenerate; the point of the tool is
+  that the EEPROM, the object dictionary and the master's struct cannot
+  drift apart by hand-editing one of them.
+
+  ON THE VENDOR ID
+
+  0x0B95 is ASIX's, not ours. A vendor ID is assigned by the EtherCAT
+  Technology Group to members, and inventing one is both invalid and
+  immediately obvious to anyone who knows the protocol. This is ASIX's
+  AX58100 development hardware, so carrying their vendor ID is the honest
+  option available to a project that is not an ETG member. The revision
+  distinguishes this firmware from their reference kit.
+
+  A product built on this would need its own ETG-assigned vendor ID. That
+  is a membership question, not a technical one.
+-->
+<EtherCATInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:noNamespaceSchemaLocation="EtherCATInfo.xsd"
+              Version="1.6">
+
+  <Vendor>
+    <Id>#x0b95</Id>
+    <Name>ASIX Electronics Corporation</Name>
+  </Vendor>
+
+  <Descriptions>
+    <Groups>
+      <Group>
+        <Type>ServoNode</Type>
+        <Name LcId="1033">EtherCAT Servo Node</Name>
+      </Group>
+    </Groups>
+
+    <Devices>
+      <Device Physics="YY">
+        <Type ProductCode="#x00620300" RevisionNo="#x00010000">ethercat_servo_node</Type>
+        <Name LcId="1033">EtherCAT Servo Node (AX58100 + ESP32-S3)</Name>
+        <GroupType>ServoNode</GroupType>
+
+        <!-- Two ports in use: IN and OUT. Physics YY = both MII. -->
+        <Info>
+          <StateMachine>
+            <Behavior StartToSaveop="0" OpToSaveop="0"/>
+          </StateMachine>
+        </Info>
+
+        <!-- FMMUs: one for outputs, one for inputs, one for mailbox state.
+             Matches what the ESC provides and what SOES expects. -->
+        <Fmmu>Outputs</Fmmu>
+        <Fmmu>Inputs</Fmmu>
+        <Fmmu>MBoxState</Fmmu>
+
+        <!-- SyncManager addresses are deliberately identical to the EEPROM
+             image the module ships with. Only SM3's length changes (6 -> 4),
+             because the padding entry in the TxPDO goes away. Keeping the
+             addresses fixed means firmware/soes/ecat_options.h stays correct
+             and the mailbox pair is not disturbed. -->
+        <Sm MinSize="34" MaxSize="128" DefaultSize="128" StartAddress="#x1000" ControlByte="#x26" Enable="1">MBoxOut</Sm>
+        <Sm MinSize="34" MaxSize="128" DefaultSize="128" StartAddress="#x1080" ControlByte="#x22" Enable="1">MBoxIn</Sm>
+        <Sm StartAddress="#x1100" ControlByte="#x64" DefaultSize="2" Enable="1">Outputs</Sm>
+        <Sm StartAddress="#x1400" ControlByte="#x20" DefaultSize="4" Enable="1">Inputs</Sm>
+
+        <!-- Master -> slave. Two bytes. -->
+        <RxPdo Fixed="1" Mandatory="1" Sm="2">
+          <Index>#x1600</Index>
+          <Name>Servo RxPDO</Name>
+          <Entry>
+            <Index>#x7000</Index>
+            <SubIndex>1</SubIndex>
+            <BitLen>16</BitLen>
+            <Name>Target Angle</Name>
+            <DataType>UINT</DataType>
+          </Entry>
+        </RxPdo>
+
+        <!-- Slave -> master. Four bytes: echo and actual, no padding.
+             Under the stock EEPROM this had to be six, with a 16-bit gap
+             entry making up the difference. That gap is the thing this
+             file exists to delete. -->
+        <TxPdo Fixed="1" Mandatory="1" Sm="3">
+          <Index>#x1A00</Index>
+          <Name>Servo TxPDO</Name>
+          <Entry>
+            <Index>#x6000</Index>
+            <SubIndex>1</SubIndex>
+            <BitLen>16</BitLen>
+            <Name>Echo Angle</Name>
+            <DataType>UINT</DataType>
+          </Entry>
+          <Entry>
+            <Index>#x6000</Index>
+            <SubIndex>2</SubIndex>
+            <BitLen>16</BitLen>
+            <Name>Actual Angle</Name>
+            <DataType>UINT</DataType>
+          </Entry>
+        </TxPdo>
+
+        <Mailbox DataLinkLayer="1">
+          <CoE SdoInfo="1" PdoAssign="0" PdoConfig="0" CompleteAccess="0"/>
+        </Mailbox>
+
+        <Dc>
+          <OpMode>
+            <Name>DcSync</Name>
+            <Desc>Synchron with SYNC0</Desc>
+            <AssignActivate>#x0300</AssignActivate>
+            <CycleTimeSync0 Factor="1">0</CycleTimeSync0>
+            <ShiftTimeSync0>0</ShiftTimeSync0>
+          </OpMode>
+        </Dc>
+
+        <!-- ConfigData is the first 8 words of the EEPROM: PDI type and
+             configuration. 0x05 selects the SPI slave PDI, which is the
+             interface the ESP32-S3 talks over.
+
+             esi_tool.py does NOT use this value by default. It copies the
+             config words out of a backup of the live device instead, because
+             getting these wrong disables the SPI PDI and removes the only
+             route back in. This value is here for completeness and for the
+             use-esi-config option, which is for a device that is already
+             bricked and has nothing left to lose. -->
+        <Eeprom>
+          <ByteSize>2048</ByteSize>
+          <ConfigData>050403440a00000000001a00003c</ConfigData>
+        </Eeprom>
+
+      </Device>
+    </Devices>
+  </Descriptions>
+</EtherCATInfo>

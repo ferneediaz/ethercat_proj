@@ -1,26 +1,34 @@
 /*
  * Object dictionary.
  *
- * Normally generated from an ESI file by SOES's tooling. Hand-written here
- * because the dictionary is small and, more importantly, because it must be
- * pinned to what the module's existing EEPROM already declares rather than
- * to an ESI we would otherwise have to flash.
+ * The structure is hand-written -- SOES can generate this from an ESI, but
+ * the dictionary is small and reading it is part of the point of the project.
+ * The numbers in it are not hand-written: identity, mapping entries and PDO
+ * sizes all come from device_identity.h, which resolves to either the ESI in
+ * esi/EthercatServoNode.xml or the stock EEPROM the module ships with.
  *
- * The two mappings below are what make the PDO sizes come out right:
+ * That indirection exists because these values are not ours to choose. The
+ * master programs the SyncManagers from whatever the EEPROM says and then
+ * checks this dictionary against them; if the two disagree it refuses SAFEOP.
+ * So the EEPROM image and this file are generated from one source rather than
+ * kept in step by hand.
  *
- *   RxPDO 0x1600 -> 0x7000:01, 16 bits            = 2 bytes  (matches SM2)
+ *   RxPDO 0x1600 -> 0x7000:01, 16 bits            = 2 bytes  (SM2)
  *   TxPDO 0x1A00 -> 0x6000:01, 16 bits (echo angle)
  *                 + 0x6000:02, 16 bits (actual angle)
- *                 + 16 bits of padding            = 6 bytes  (matches SM3)
+ *                 + padding, only on the stock EEPROM  = 4 or 6 bytes (SM3)
  *
- * The padding entry is not decoration. The EEPROM declares SM3 as 6 bytes,
- * and if the mapping produced only 2 the master would compute a different
- * input size than the SyncManager it programmed, and refuse SAFEOP.
+ * The padding entry is not decoration. The stock EEPROM declares SM3 as 6
+ * bytes, and if the mapping produced only 4 the master would compute a
+ * different input size than the SyncManager it programmed. Once the EEPROM
+ * carries our own ESI, SM3 is 4 bytes and the padding disappears.
  */
 #include <stddef.h>
+#include <stdint.h>
 
 #include "esc_coe.h"
 #include "utypes.h"
+#include "device_identity.h"
 
 #ifndef HW_REV
 #define HW_REV "1.0"
@@ -47,7 +55,9 @@ static const char acName1A00[] = "Servo TxPDO";
 static const char acName1A00_00[] = "Max SubIndex";
 static const char acName1A00_01[] = "Echo Angle";
 static const char acName1A00_02[] = "Actual Angle";
+#ifndef CONFIG_ESC_SII_REWRITTEN
 static const char acName1A00_03[] = "Padding";
+#endif
 static const char acName1C00[] = "Sync Manager Communication Type";
 static const char acName1C00_00[] = "Max SubIndex";
 static const char acName1C00_01[] = "Communications Type SM0";
@@ -78,8 +88,7 @@ const _objd SDO1000[] = {
 	{0x0, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1000, 0x00001389, NULL},
 };
 const _objd SDO1008[] = {
-	{0x0, DTYPE_VISIBLE_STRING, 152, ATYPE_RO, acName1008, 0,
-	 "ethercat_servo_node"},
+	{0x0, DTYPE_VISIBLE_STRING, 152, ATYPE_RO, acName1008, 0, DEV_NAME},
 };
 const _objd SDO1009[] = {
 	{0x0, DTYPE_VISIBLE_STRING, 0, ATYPE_RO, acName1009, 0, HW_REV},
@@ -89,39 +98,70 @@ const _objd SDO100A[] = {
 };
 
 /*
- * Identity deliberately mirrors the stock EEPROM (vendor 0x00000009,
- * product 0x26483052, revision 0x00020111). A master that compares the CoE
- * identity against the SII identity must see the same numbers, and we are
- * not rewriting the SII.
+ * Identity must match whatever the SII EEPROM declares, because a master that
+ * compares the two has to see the same numbers. device_identity.h resolves to
+ * Beckhoff's stock values or to ours depending on whether the EEPROM has been
+ * rewritten -- it is not a preference, it is a report of what is on the chip.
  */
 const _objd SDO1018[] = {
 	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1018_00, 4, NULL},
-	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1018_01, 0x00000009, NULL},
-	{0x02, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1018_02, 0x26483052, NULL},
-	{0x03, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1018_03, 0x00020111, NULL},
+	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1018_01, DEV_VENDOR_ID, NULL},
+	{0x02, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1018_02, DEV_PRODUCT_CODE, NULL},
+	{0x03, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1018_03, DEV_REVISION, NULL},
 	{0x04, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1018_04, 0x00000000, NULL},
 };
 
-/* 0x70000110 = index 0x7000, subindex 0x01, 0x10 (16) bits. */
+/* ESI_RXPDO_ENTRY_1 is 0x70000110: index 0x7000, subindex 0x01, 0x10 (16)
+ * bits, which is how mapping entries encode index<<16 | subindex<<8 | bits. */
 const _objd SDO1600[] = {
-	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1600_00, 1, NULL},
-	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1600_01, 0x70000110, NULL},
+	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1600_00, DEV_RXPDO_ENTRIES, NULL},
+	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1600_01, ESI_RXPDO_ENTRY_1, NULL},
 };
 
-/* Mapping entries encode index<<16 | subindex<<8 | bitlength.
- *
- * 16 bits of echo + 16 of actual position + a 0x00000010 gap entry (no
- * object, 16 bits of padding) = 6 bytes, which is what the EEPROM declares
- * for SM3. The gap shrank from 32 bits to 16 when actual position was added,
- * so the total is unchanged and the EEPROM is untouched. Get this wrong and
- * the master computes a different input size than the SyncManager it
- * programmed, and refuses SAFEOP. */
+/* 16 bits of echo + 16 of actual position, and on the stock EEPROM a gap
+ * entry (no object, just bit length) padding the total out to the 6 bytes
+ * SM3 declares. Get the total wrong and the master computes a different
+ * input size than the SyncManager it programmed, and refuses SAFEOP. */
 const _objd SDO1A00[] = {
-	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1A00_00, 3, NULL},
-	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_01, 0x60000110, NULL},
-	{0x02, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_02, 0x60000210, NULL},
-	{0x03, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_03, 0x00000010, NULL},
+	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1A00_00, DEV_TXPDO_ENTRIES, NULL},
+	{0x01, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_01, ESI_TXPDO_ENTRY_1, NULL},
+	{0x02, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_02, ESI_TXPDO_ENTRY_2, NULL},
+#ifndef CONFIG_ESC_SII_REWRITTEN
+	{0x03, DTYPE_UNSIGNED32, 32, ATYPE_RO, acName1A00_03, DEV_TXPDO_PAD_ENTRY, NULL},
+#endif
 };
+
+/*
+ * The failure these guard against is not a crash. A mapping that totals the
+ * wrong number of bytes builds cleanly, flashes cleanly, and then sits in
+ * PREOP because the master computed a different process-data size than the
+ * SyncManager it programmed. That is an afternoon with a packet capture.
+ * Catch it at compile time instead.
+ *
+ * Each array carries one extra element for subindex 0, the entry count.
+ */
+#define MAP_BITS(m) ((m) & 0xFFu)
+
+_Static_assert(sizeof(SDO1600) / sizeof(SDO1600[0]) == DEV_RXPDO_ENTRIES + 1,
+	       "RxPDO array does not hold the number of entries it declares");
+_Static_assert(sizeof(SDO1A00) / sizeof(SDO1A00[0]) == DEV_TXPDO_ENTRIES + 1,
+	       "TxPDO array does not hold the number of entries it declares");
+
+_Static_assert(MAP_BITS(ESI_RXPDO_ENTRY_1) == DEV_RXPDO_BYTES * 8,
+	       "RxPDO mapping does not fill SM2");
+
+#ifdef CONFIG_ESC_SII_REWRITTEN
+_Static_assert(MAP_BITS(ESI_TXPDO_ENTRY_1) + MAP_BITS(ESI_TXPDO_ENTRY_2)
+		       == DEV_TXPDO_BYTES * 8,
+	       "TxPDO mapping does not fill SM3");
+#else
+_Static_assert(MAP_BITS(ESI_TXPDO_ENTRY_1) + MAP_BITS(ESI_TXPDO_ENTRY_2)
+		       + DEV_TXPDO_PAD_BITS == DEV_TXPDO_BYTES * 8,
+	       "TxPDO mapping plus padding does not fill the stock EEPROM's SM3");
+_Static_assert(DEV_TXPDO_PAD_BITS > 0,
+	       "stock EEPROM SM3 is no larger than the real TxPDO: drop the "
+	       "padding entry, or set CONFIG_ESC_SII_REWRITTEN");
+#endif
 
 const _objd SDO1C00[] = {
 	{0x00, DTYPE_UNSIGNED8, 8, ATYPE_RO, acName1C00_00, 4, NULL},
@@ -184,8 +224,8 @@ const _objectlist SDOobjects[] = {
 	{0x1009, OTYPE_VAR, 0, 0, acName1009, SDO1009},
 	{0x100A, OTYPE_VAR, 0, 0, acName100A, SDO100A},
 	{0x1018, OTYPE_RECORD, 4, 0, acName1018, SDO1018},
-	{0x1600, OTYPE_RECORD, 1, 0, acName1600, SDO1600},
-	{0x1A00, OTYPE_RECORD, 3, 0, acName1A00, SDO1A00},
+	{0x1600, OTYPE_RECORD, DEV_RXPDO_ENTRIES, 0, acName1600, SDO1600},
+	{0x1A00, OTYPE_RECORD, DEV_TXPDO_ENTRIES, 0, acName1A00, SDO1A00},
 	{0x1C00, OTYPE_ARRAY, 4, 0, acName1C00, SDO1C00},
 	{0x1C12, OTYPE_ARRAY, 1, 0, acName1C12, SDO1C12},
 	{0x1C13, OTYPE_ARRAY, 1, 0, acName1C13, SDO1C13},

@@ -62,8 +62,11 @@ are the second and third pins along the *even* row.
 
 Work these in order when the hardware arrives. Each phase ends with a
 verifiable pass condition — do not move on until it passes.
-Reference documents live in `knowledge base/` (ASIX datasheet, ESI design
-note, reference schematic) and the original build plan docx.
+Reference documents (ASIX datasheet, ESI design note, reference schematic)
+and the original build plan docx live in `knowledge base/`. That directory is
+ASIX's material rather than ours, so it is not redistributed with this repo —
+it is gitignored. Download the AX58100 kits from ASIX and unpack them there if
+you need them.
 
 ## Phase 3 — RESULTS (completed 2026-07-31)
 
@@ -86,8 +89,10 @@ What the module actually reports:
 
 **The EEPROM ships with Beckhoff's stock Slave Stack Code demo ESI**, not
 the ASIX one. That is not a fault — it means the EEPROM is programmed and
-readable. It does mean the ASIX ESI in `knowledge base/` describes a
-different configuration than what is on the module today.
+readable. It does mean ASIX's own ESI, and the one this project now carries
+in `esi/EthercatServoNode.xml`, both describe a different configuration than
+what is on the module today. Everything downstream is built for the image
+that is actually on the chip; see `firmware/soes/device_identity.h`.
 
 ### Correction to the original plan's Milestone 1
 
@@ -108,9 +113,15 @@ So the realistic milestone without the STM32 is: **link up, slave
 enumerated, EEPROM readable, mailbox and DC configured.** All achieved.
 Reaching SAFE_OP/OP now depends on Phase 4, not on rewriting the EEPROM.
 
-Practical consequence: **do not bother flashing the ASIX ESI yet.** The
-EEPROM contents must match whatever object dictionary the SOES firmware
-implements, so write it once in Phase 4 when that is decided — not now.
+Practical consequence: **do not bother flashing any ESI yet.** The EEPROM
+contents must match whatever object dictionary the SOES firmware implements,
+so write it once when that is decided — not now.
+
+That point has since arrived. The dictionary is settled, `esi/` holds our own
+ESI, and `scripts/write-eeprom.sh` writes it. Doing so is optional: the chain
+reaches OP on the stock image and always has. What it buys is our own identity
+instead of Beckhoff's, and a four-byte SM3 with no padding entry. See
+"Rewriting the EEPROM" below.
 
 ## Confirmed ESC configuration (read live, `servo_master eth0 regs`)
 
@@ -275,10 +286,11 @@ serial console instead.
       MISO/MOSI swapped (they are adjacent on the header); module
       unpowered.
 - [ ] Integrate SOES; implement its HAL on top of the proven SPI reads.
-- [ ] Object dictionary / PDO mapping must match `master/src/pdo_layout.h`
-      (uint16 `target_angle` out, uint16 `echo_angle` in). Note the stock
-      EEPROM is currently 2 bytes out / **6** bytes in — reconcile by
-      rewriting the EEPROM once the dictionary is settled.
+- [x] Object dictionary / PDO mapping must match `master/src/pdo_layout.h`
+      (uint16 `target_angle` out, uint16 `echo_angle` in). The stock EEPROM
+      is 2 bytes out / **6** bytes in, which the TxPDO reaches with a padding
+      entry. Both sides now take those numbers from one source rather than
+      restating them — see "Rewriting the EEPROM".
 - [ ] `sudo servo_master eth0 set 90` → 90 appears on the ESP32's serial
       output and echoes back (`echo=90` in the master's status line).
       **MILESTONE 2** — data flows Pi → ESC → SPI → ESP32 → back.
@@ -392,3 +404,77 @@ nothing — only counted edges do.
 - **Daisy chain:** plug node 2 into node 1's OUT port; generalize the
   master to iterate `ec_slave[1..ec_slavecount]` instead of assuming
   slave 1.
+
+## Rewriting the EEPROM
+
+Optional, and deliberately not done for most of this project's life. The
+module arrived carrying Beckhoff's demo SII, that image is valid, and the
+whole chain reaches OP on it. Everything that looks hardcoded in the slave —
+the Beckhoff identity in `0x1018`, the padding entry in the TxPDO — is a
+consequence of matching it.
+
+What rewriting buys, and it is worth being honest that it is not much
+functionally:
+
+- the node reports its own identity instead of enumerating as a Beckhoff
+  demo board, which is the first thing anyone familiar with EtherCAT checks
+- SM3 becomes four bytes, so the padding entry disappears
+- any ESI-driven master (TwinCAT) can import the device at all
+
+The source of truth is `esi/EthercatServoNode.xml`. Two things are generated
+from it, so that the EEPROM, the object dictionary and the master's struct
+cannot drift apart:
+
+```
+esi/EthercatServoNode.xml ──┬─> firmware/soes/esi_generated.h
+                            └─> build/sii.bin
+```
+
+Regenerate the header after any ESI change:
+
+```
+./scripts/esi_tool.py header -o firmware/soes/esi_generated.h
+```
+
+### The one sharp edge
+
+Words 0..7 of the SII configure the PDI — the physical interface the ESC
+exposes, which on this board is the SPI slave port the ESP32-S3 is wired to.
+Write those wrong and the ESC stops answering over SPI, which is the route
+you would use to fix them; recovery then needs an external programmer clipped
+to the EEPROM.
+
+`esi_tool.py` therefore refuses to synthesise that region. It copies it out of
+a backup of the live device instead. The CRC in word 7 covers exactly that
+block, so copying it keeps the checksum valid without recomputing anything.
+
+### Procedure
+
+```
+sudo ./scripts/write-eeprom.sh eth0
+```
+
+It reads the current EEPROM to `backups/sii-<stamp>.bin` before anything else
+and refuses to continue without one, builds the image with the config words
+copied from that backup, shows a decode of exactly what is about to be
+written, and asks. After writing it reads back and compares. If the readback
+disagrees it tells you to restore and does not pretend otherwise:
+
+```
+sudo ./scripts/write-eeprom.sh eth0 --restore backups/sii-<stamp>.bin
+```
+
+**Order matters.** The EEPROM goes first, then both builds:
+
+1. `sudo ./scripts/write-eeprom.sh eth0`
+2. Power-cycle. The ESC loads the SII at reset; until then it is still
+   running on the old contents.
+3. `sudo servo_master eth0 scan` — expect vendor `0x00000b95`, product
+   `0x00620300`, revision `0x00010000`.
+4. Rebuild both sides for the four-byte input size:
+   `CONFIG_ESC_SII_REWRITTEN=y` for the firmware, `-DSERVO_SII_REWRITTEN=ON`
+   for the master.
+
+Between steps 1 and 4 the slave declares six bytes of inputs while the EEPROM
+declares four, so the master refuses SAFEOP. That is expected in the gap, not
+a fault. Reversing the order produces the same stall for the same reason.

@@ -4,6 +4,17 @@ project(servo_master C)
 set(CMAKE_C_STANDARD 99)
 add_compile_options(-Wall -Wextra)
 
+# Must match CONFIG_ESC_SII_REWRITTEN in the slave firmware, because both
+# describe the same fact: which image is in the ESC's EEPROM. Off is what an
+# unmodified module does. See scripts/write-eeprom.sh.
+option(SERVO_SII_REWRITTEN "The ESC EEPROM holds our own ESI, not the stock demo image" OFF)
+if(SERVO_SII_REWRITTEN)
+  add_compile_definitions(SERVO_SII_REWRITTEN)
+  message(STATUS "Process data: 4 bytes in (EEPROM rewritten with our ESI)")
+else()
+  message(STATUS "Process data: 6 bytes in (stock demo EEPROM)")
+endif()
+
 # Unit tests build anywhere (Mac or Pi) — no SOEM needed.
 add_executable(test_angle test/test_angle.c src/angle.c)
 target_link_libraries(test_angle m)

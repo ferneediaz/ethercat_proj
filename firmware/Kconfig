@@ -42,6 +42,31 @@ config ESC_DC_SYNC
 	  This matters little for a hobby servo on a 20 ms PWM frame. It
 	  becomes mandatory the moment two axes have to move together.
 
+config ESC_SII_REWRITTEN
+	bool "The ESC EEPROM holds our own ESI, not the stock demo image"
+	default n
+	help
+	  Says which image is actually in the module's SII EEPROM. This is a
+	  statement of fact about the hardware in front of you, not a
+	  preference — set it wrong and the slave stops at PREOP.
+
+	  Off: the module still carries the Beckhoff Slave Stack Code demo
+	  image it shipped with. The slave reports Beckhoff's identity, because
+	  a master that cross-checks the CoE identity against the SII identity
+	  has to see the same numbers on both, and SM3 is six bytes, so the
+	  TxPDO carries a padding entry to reach that length.
+
+	  On: scripts/write-eeprom.sh has been run and the EEPROM holds the
+	  image built from esi/EthercatServoNode.xml. Identity is ours, SM3 is
+	  four bytes, and the padding entry is gone.
+
+	  Order matters. Write the EEPROM first, then rebuild with this on.
+	  The reverse leaves a slave whose object dictionary is smaller than
+	  the SyncManager the master programmed from the EEPROM, and the
+	  master refuses SAFEOP rather than guessing.
+
+	  Defaults off because that is what an unmodified module does.
+
 config ESC_USE_SOES
 	bool "Use the SOES slave stack instead of the built-in minimal slave"
 	default y

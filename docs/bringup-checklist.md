@@ -447,6 +447,17 @@ to the EEPROM.
 `esi_tool.py` therefore refuses to synthesise that region. It copies it out of
 a backup of the live device instead. The CRC in word 7 covers exactly that
 block, so copying it keeps the checksum valid without recomputing anything.
+(`--use-esi-config` does synthesise it, CRC included, for a board that is
+already unreachable and has nothing left to lose.)
+
+### What the image does not carry
+
+No DC category (type 60) is written, even though the ESI declares a `Dc`
+OpMode. SOEM configures distributed clocks from the ESC's own registers, so
+SYNC0 and the phase-error figures are unaffected — this is why the omission is
+invisible on our bench. A tool that configures DC from the EEPROM alone would
+not offer a SYNC0 mode; give it `esi/EthercatServoNode.xml` directly. The tool
+prints a reminder whenever it writes an image for an ESI that declares DC.
 
 ### Procedure
 

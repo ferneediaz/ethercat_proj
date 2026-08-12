@@ -140,7 +140,27 @@ else
 	fi
 fi
 
-cat <<EOF
+if [ -n "$RESTORE" ]; then
+	# A restore puts back whatever was there before, so the instructions for
+	# a fresh write do not apply -- following them would set the firmware to
+	# the four-byte layout against an EEPROM that may well declare six.
+	cat <<EOF
+
+Restored $RESTORE.
+
+  1. Power-cycle the slave. The ESC loads the SII at reset; until then it is
+     still running on the old contents.
+  2. sudo servo_master $IFACE scan
+     Expect whatever identity that image carries. If you have just rolled back
+     to the stock image, that is vendor 0x00000009, product 0x26483052.
+  3. Make sure both builds match what is now on the chip. For the stock image
+     that means CONFIG_ESC_SII_REWRITTEN=n and no -DSERVO_SII_REWRITTEN, which
+     are the defaults.
+
+  Pre-restore backup: $BACKUP
+EOF
+else
+	cat <<EOF
 
 Done. Next, in this order:
 
@@ -158,3 +178,4 @@ Done. Next, in this order:
 
   Backup: $BACKUP
 EOF
+fi
